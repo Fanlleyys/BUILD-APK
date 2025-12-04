@@ -3,7 +3,7 @@ import { Github, Play, Loader2, Download, CheckCircle2, AlertCircle } from 'luci
 import { BuildStatus } from '../types';
 
 interface BuildFormProps {
-  onBuild: (url: string) => void;
+  onBuild: (url: string, isSimulated: boolean) => void;
   status: BuildStatus;
   apkUrl?: string;
 }
@@ -15,7 +15,7 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status, apkUrl })
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (url.trim()) {
-      onBuild(url);
+      onBuild(url, isSimulated);
     }
   };
 

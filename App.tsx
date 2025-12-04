@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { BuildForm } from './components/BuildForm';
 import { Terminal } from './components/Terminal';
 import { StatusSteps } from './components/StatusSteps';
@@ -6,13 +6,16 @@ import { BuildStatus, LogEntry } from './types';
 import { Layers, Rocket, Code2, Cpu } from 'lucide-react';
 import { simulateBuildProcess } from './services/simulationService';
 
-// Note: In a real app, this would point to your backend endpoint
-// const API_ENDPOINT = 'http://localhost:3001/api/build/stream';
+// Point this to your VPS IP in production, e.g., 'http://123.45.67.89:3001'
+const API_BASE_URL = 'http://localhost:3001';
 
 export default function App() {
   const [status, setStatus] = useState<BuildStatus>(BuildStatus.IDLE);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [apkUrl, setApkUrl] = useState<string | undefined>(undefined);
+  
+  // Use a ref to track if we've already fallen back to simulation to prevent loops
+  const hasFallenBackRef = useRef(false);
 
   const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
     setLogs((prev) => [
@@ -26,25 +29,81 @@ export default function App() {
     ]);
   }, []);
 
-  const handleBuild = async (repoUrl: string) => {
+  const runSimulation = async (repoUrl: string) => {
+    await simulateBuildProcess(repoUrl, setStatus, addLog, setApkUrl);
+  };
+
+  const handleBuild = async (repoUrl: string, isSimulated: boolean) => {
     // Reset state
     setStatus(BuildStatus.CLONING);
     setLogs([]);
     setApkUrl(undefined);
+    hasFallenBackRef.current = false;
     addLog(`Initiating build for: ${repoUrl}`, 'info');
 
-    // FOR PREVIEW: We use the simulation service because we don't have the Node backend running 
-    // in this browser environment.
-    // In a real deployment, you would fetch(API_ENDPOINT) and handle SSE events.
-    
+    if (isSimulated) {
+      addLog('Mode: Demo Simulation (Client-side)', 'info');
+      await runSimulation(repoUrl);
+      return;
+    }
+
+    // Real Backend Connection via SSE
     try {
-      await simulateBuildProcess(repoUrl, (newStatus) => {
-        setStatus(newStatus);
-      }, (message, type) => {
-        addLog(message, type);
-      }, (url) => {
-        setApkUrl(url);
-      });
+      addLog(`Attempting to connect to Build Server at ${API_BASE_URL}...`, 'info');
+      
+      const eventSource = new EventSource(`${API_BASE_URL}/api/build/stream?repoUrl=${encodeURIComponent(repoUrl)}`);
+
+      eventSource.onopen = () => {
+        addLog('Connected to Build Server.', 'success');
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'log') {
+            addLog(data.log.message, data.log.type);
+          } else if (data.type === 'status') {
+            setStatus(data.status as BuildStatus);
+          } else if (data.type === 'result') {
+            if (data.success) {
+              setApkUrl(data.downloadUrl);
+              addLog('Build completed successfully!', 'success');
+            } else {
+              setStatus(BuildStatus.ERROR);
+              addLog(`Build failed: ${data.error}`, 'error');
+            }
+            eventSource.close();
+          } else if (data.type === 'error') {
+             setStatus(BuildStatus.ERROR);
+             addLog(data.message, 'error');
+             eventSource.close();
+          }
+        } catch (e) {
+          console.error('Error parsing SSE data', e);
+        }
+      };
+
+      eventSource.onerror = (err) => {
+        // This usually triggers on "Connection Refused" if the backend isn't running
+        if (!hasFallenBackRef.current) {
+           console.warn('Backend connection failed, switching to simulation.');
+           hasFallenBackRef.current = true;
+           eventSource.close();
+           
+           addLog('❌ Error: Could not connect to Backend Server.', 'error');
+           addLog('Make sure the Node.js server is running on port 3001.', 'info');
+           addLog('Falling back to Demo Simulation Mode...', 'info');
+           
+           // Small delay before starting simulation so user sees the error
+           setTimeout(() => {
+             runSimulation(repoUrl);
+           }, 1000);
+        } else {
+           eventSource.close();
+        }
+      };
+
     } catch (error) {
       setStatus(BuildStatus.ERROR);
       addLog('Critical system error during build pipeline.', 'error');
