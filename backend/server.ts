@@ -30,6 +30,11 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(WORKSPACE_DIR)) fs.mkdirSync(WORKSPACE_DIR, { recursive: true, mode: 0o777 });
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true, mode: 0o777 });
 
+// Root route for health check
+app.get('/', (req, res) => {
+    res.status(200).send('AppBuilder-AI Build Server is Running. 🚀');
+});
+
 // Serve static APK files
 app.use('/download', express.static(PUBLIC_DIR) as any);
 
