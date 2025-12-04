@@ -3,19 +3,18 @@ import { Github, Play, Loader2, Download, CheckCircle2, AlertCircle } from 'luci
 import { BuildStatus } from '../types';
 
 interface BuildFormProps {
-  onBuild: (url: string, isSimulated: boolean) => void;
+  onBuild: (url: string) => void;
   status: BuildStatus;
   apkUrl?: string;
 }
 
 export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status, apkUrl }) => {
   const [url, setUrl] = useState('');
-  const [isSimulated, setIsSimulated] = useState(true);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (url.trim()) {
-      onBuild(url, isSimulated);
+      onBuild(url);
     }
   };
 
@@ -43,19 +42,7 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status, apkUrl })
             />
           </div>
 
-          <div className="flex items-center justify-between pt-2">
-            <div className="flex items-center gap-2">
-               <label className="flex items-center space-x-2 text-xs text-zinc-500 cursor-pointer hover:text-zinc-300 transition-colors">
-                <input 
-                  type="checkbox" 
-                  checked={isSimulated}
-                  onChange={(e) => setIsSimulated(e.target.checked)}
-                  className="rounded bg-zinc-800 border-zinc-700 text-brand-600 focus:ring-brand-500/50"
-                />
-                <span>Demo Simulation Mode (No Server Required)</span>
-              </label>
-            </div>
-
+          <div className="flex items-center justify-end pt-2">
             <button
               type="submit"
               disabled={isLoading || !url}

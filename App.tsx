@@ -1,21 +1,17 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import { BuildForm } from './components/BuildForm';
 import { Terminal } from './components/Terminal';
 import { StatusSteps } from './components/StatusSteps';
 import { BuildStatus, LogEntry } from './types';
 import { Layers, Rocket, Code2, Cpu } from 'lucide-react';
-import { simulateBuildProcess } from './services/simulationService';
 
-// Point this to your VPS IP in production, e.g., 'http://123.45.67.89:3001'
-const API_BASE_URL = 'http://localhost:3001';
+// Live Hugging Face Backend URL
+const API_BASE_URL = 'https://fanlley-apk-builder.hf.space';
 
 export default function App() {
   const [status, setStatus] = useState<BuildStatus>(BuildStatus.IDLE);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [apkUrl, setApkUrl] = useState<string | undefined>(undefined);
-  
-  // Use a ref to track if we've already fallen back to simulation to prevent loops
-  const hasFallenBackRef = useRef(false);
 
   const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
     setLogs((prev) => [
@@ -29,32 +25,21 @@ export default function App() {
     ]);
   }, []);
 
-  const runSimulation = async (repoUrl: string) => {
-    await simulateBuildProcess(repoUrl, setStatus, addLog, setApkUrl);
-  };
-
-  const handleBuild = async (repoUrl: string, isSimulated: boolean) => {
+  const handleBuild = async (repoUrl: string) => {
     // Reset state
     setStatus(BuildStatus.CLONING);
     setLogs([]);
     setApkUrl(undefined);
-    hasFallenBackRef.current = false;
     addLog(`Initiating build for: ${repoUrl}`, 'info');
-
-    if (isSimulated) {
-      addLog('Mode: Demo Simulation (Client-side)', 'info');
-      await runSimulation(repoUrl);
-      return;
-    }
 
     // Real Backend Connection via SSE
     try {
-      addLog(`Attempting to connect to Build Server at ${API_BASE_URL}...`, 'info');
+      addLog(`Connecting to Build Server at ${API_BASE_URL}...`, 'info');
       
       const eventSource = new EventSource(`${API_BASE_URL}/api/build/stream?repoUrl=${encodeURIComponent(repoUrl)}`);
 
       eventSource.onopen = () => {
-        addLog('Connected to Build Server.', 'success');
+        addLog('Connected to Cloud Build Engine.', 'success');
       };
 
       eventSource.onmessage = (event) => {
@@ -85,22 +70,12 @@ export default function App() {
       };
 
       eventSource.onerror = (err) => {
-        // This usually triggers on "Connection Refused" if the backend isn't running
-        if (!hasFallenBackRef.current) {
-           console.warn('Backend connection failed, switching to simulation.');
-           hasFallenBackRef.current = true;
-           eventSource.close();
-           
-           addLog('❌ Error: Could not connect to Backend Server.', 'error');
-           addLog('Make sure the Node.js server is running on port 3001.', 'info');
-           addLog('Falling back to Demo Simulation Mode...', 'info');
-           
-           // Small delay before starting simulation so user sees the error
-           setTimeout(() => {
-             runSimulation(repoUrl);
-           }, 1000);
-        } else {
-           eventSource.close();
+        console.error('EventSource failed:', err);
+        eventSource.close();
+        if (status !== BuildStatus.SUCCESS) {
+          setStatus(BuildStatus.ERROR);
+          addLog('Connection to build server failed or was interrupted.', 'error');
+          addLog('Please check if the Hugging Face Space is running and awake.', 'info');
         }
       };
 
@@ -138,7 +113,7 @@ export default function App() {
             </div>
             <div className="h-4 w-px bg-zinc-800 hidden md:block"></div>
             <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-              System Online
+              Cloud Engine Ready
             </span>
           </div>
         </div>
