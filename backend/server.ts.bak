@@ -21,7 +21,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(WORKSPACE_DIR)) fs.mkdirSync(WORKSPACE_DIR, { recursive: true, mode: 0o777 });
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true, mode: 0o777 });
 
-app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v2.0 (Customizable) is Running. 🚀'); });
+app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v2.1 (Fix Fullscreen) is Running. 🚀'); });
 app.use('/download', express.static(PUBLIC_DIR) as any);
 
 const sendEvent = (res: any, data: any) => {
@@ -40,7 +40,6 @@ function runCommand(command: string, args: string[], cwd: string, logFn?: (msg: 
 }
 
 app.get('/api/build/stream', async (req, res) => {
-    // 1. TERIMA PARAMETER BARU DARI FRONTEND
     const { repoUrl, appName, appId, orientation, iconUrl, fullscreen } = req.query;
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -53,10 +52,9 @@ app.get('/api/build/stream', async (req, res) => {
         return;
     }
 
-    // Default Values kalau user gak isi
     const finalAppName = (appName as string) || 'My App';
     const finalAppId = (appId as string) || 'com.appbuilder.generated';
-    const finalOrientation = (orientation as string) || 'portrait'; // portrait, landscape, or user
+    const finalOrientation = (orientation as string) || 'portrait';
     const isFullscreen = fullscreen === 'true';
 
     const buildId = uuidv4();
@@ -71,7 +69,7 @@ app.get('/api/build/stream', async (req, res) => {
         if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
 
         log(`Starting build process ID: ${buildId}`, 'info');
-        log(`Settings: Name=${finalAppName}, ID=${finalAppId}, Orient=${finalOrientation}`, 'info');
+        log(`Settings: Name=${finalAppName}, ID=${finalAppId}, Orient=${finalOrientation}, Fullscreen=${isFullscreen}`, 'info');
         
         updateStatus('CLONING');
         log(`Cloning ${repoUrl}...`, 'command');
@@ -101,47 +99,42 @@ app.get('/api/build/stream', async (req, res) => {
         let webDir = 'dist'; 
         if (fs.existsSync(path.join(projectDir, 'build'))) webDir = 'build'; 
         
-        // Init dengan Nama & ID Custom
         await runCommand('npx', ['cap', 'init', `"${finalAppName}"`, finalAppId, '--web-dir', webDir], projectDir, log);
 
         log('Adding Android platform...', 'command');
         await runCommand('npx', ['cap', 'add', 'android'], projectDir, log);
 
-        // --- CUSTOMIZATION MAGIC STARTS HERE ---
+        // --- CUSTOMIZATION FIX ---
         log('Applying custom settings (Icon, Orientation, Fullscreen)...', 'info');
         const androidManifestPath = path.join(projectDir, 'android/app/src/main/AndroidManifest.xml');
         const stylesPath = path.join(projectDir, 'android/app/src/main/res/values/styles.xml');
 
-        // 1. SET ORIENTATION (Edit AndroidManifest.xml)
-        // Kita pakai 'sed' buat nyisipin android:screenOrientation ke dalam tag <activity>
+        // 1. SET ORIENTATION
         if (finalOrientation !== 'user') {
             await runCommand(`sed -i 's/<activity/<activity android:screenOrientation="${finalOrientation}"/g' ${androidManifestPath}`, [], projectDir, log);
         }
 
-        // 2. SET FULLSCREEN (Edit styles.xml)
+        // 2. SET FULLSCREEN (FIXED SED COMMAND)
         if (isFullscreen) {
-            // Ubah Parent Theme jadi NoActionBar.Fullscreen
-            await runCommand(`sed -i 's/parent="AppTheme.NoActionBar"/parent="Theme.AppCompat.NoActionBar.FullScreen"/g' ${stylesPath}`, [], projectDir, log);
-            // Tambahin item fullscreen
-            await runCommand(`sed -i 's/<\/style>/<item name="android:windowFullscreen">true<\/item><\/style>/g' ${stylesPath}`, [], projectDir, log);
+            // Ganti Parent Theme
+            await runCommand(`sed -i 's|parent="AppTheme.NoActionBar"|parent="Theme.AppCompat.NoActionBar.FullScreen"|g' ${stylesPath}`, [], projectDir, log);
+            // Tambah item fullscreen (Pakai pipe | biar gak error)
+            await runCommand(`sed -i 's|<\/style>|<item name="android:windowFullscreen">true<\/item><\/style>|g' ${stylesPath}`, [], projectDir, log);
         }
 
-        // 3. SET CUSTOM ICON (Download & Replace)
+        // 3. SET CUSTOM ICON
         if (iconUrl && typeof iconUrl === 'string' && iconUrl.startsWith('http')) {
             log('Downloading custom icon...', 'command');
             const resDir = path.join(projectDir, 'android/app/src/main/res');
-            // Kita timpa semua ukuran icon dengan satu gambar (Cara kasar tapi works buat MVP)
             const folders = ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi'];
             for (const folder of folders) {
                 const target = path.join(resDir, folder, 'ic_launcher.png');
                 const targetRound = path.join(resDir, folder, 'ic_launcher_round.png');
-                // Download pakai curl
                 await runCommand(`curl -L "${iconUrl}" -o ${target}`, [], projectDir);
-                await runCommand(`cp ${target} ${targetRound}`, [], projectDir); // Pakai gambar sama buat round
+                await runCommand(`cp ${target} ${targetRound}`, [], projectDir);
             }
             log('Custom icon applied!', 'success');
         }
-        // ---------------------------------------
 
         updateStatus('ANDROID_SYNC');
         await runCommand('npx', ['cap', 'sync'], projectDir, log);
