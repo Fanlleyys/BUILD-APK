@@ -5,14 +5,17 @@ import { StatusSteps } from './components/StatusSteps';
 import { BuildStatus, LogEntry } from './types';
 import { Layers, Rocket, Code2, Cpu } from 'lucide-react';
 
-// Live Hugging Face Backend URL
-const API_BASE_URL = 'https://fanlley-apk-builder.hf.space';
+// 1. Setup URL Backend
+const ENV_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
+const FALLBACK_URL = 'https://fanlley-apk-builder.hf.space';
+const API_BASE_URL = (ENV_URL || FALLBACK_URL).replace(/\/$/, '');
 
 export default function App() {
   const [status, setStatus] = useState<BuildStatus>(BuildStatus.IDLE);
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [apkUrl, setApkUrl] = useState<string | undefined>(undefined);
 
+  // Helper buat nambah log ke terminal
   const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
     setLogs((prev) => [
       ...prev,
@@ -25,45 +28,84 @@ export default function App() {
     ]);
   }, []);
 
-  const handleBuild = async (repoUrl: string) => {
-    // Reset state
+  // FUNGSI BUILD UTAMA (Sekarang menerima Object formData, bukan cuma string)
+  const handleBuild = async (formData: any) => {
+    // 1. Reset State
     setStatus(BuildStatus.CLONING);
     setLogs([]);
     setApkUrl(undefined);
-    addLog(`Initiating build for: ${repoUrl}`, 'info');
+    
+    addLog(`Initiating build for: ${formData.repoUrl}`, 'info');
+    addLog(`⚙️ Config: ${formData.appName} | ${formData.orientation} | Fullscreen: ${formData.fullscreen}`, 'info');
 
-    // Real Backend Connection via SSE
     try {
       addLog(`Connecting to Build Server at ${API_BASE_URL}...`, 'info');
       
-      const eventSource = new EventSource(`${API_BASE_URL}/api/build/stream?repoUrl=${encodeURIComponent(repoUrl)}`);
+      // 2. SIAPKAN DATA UNTUK DIKIRIM KE BACKEND
+      // Kita ubah settingan jadi Query Parameters (?appName=...&fullscreen=true...)
+      const params = new URLSearchParams({
+        repoUrl: formData.repoUrl,
+        appName: formData.appName || 'My App',
+        appId: formData.appId || 'com.appbuilder.generated',
+        orientation: formData.orientation || 'portrait',
+        fullscreen: formData.fullscreen.toString(),
+        iconUrl: formData.iconUrl || ''
+      });
+
+      // 3. BUKA KONEKSI STREAMING DENGAN PARAMETER LENGKAP
+      const streamUrl = `${API_BASE_URL}/api/build/stream?${params.toString()}`;
+      const eventSource = new EventSource(streamUrl);
 
       eventSource.onopen = () => {
-        addLog('Connected to Cloud Build Engine.', 'success');
+        addLog('Connected to Cloud Build Engine. Sending configuration...', 'success');
       };
 
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
 
+          // A. Handle Log Masuk
           if (data.type === 'log') {
             addLog(data.log.message, data.log.type);
-          } else if (data.type === 'status') {
-            setStatus(data.status as BuildStatus);
-          } else if (data.type === 'result') {
+          } 
+          
+          // B. Handle Status Berubah
+          else if (data.type === 'status') {
+            switch (data.status) {
+                case 'CLONING': setStatus(BuildStatus.CLONING); break;
+                case 'INSTALLING': setStatus(BuildStatus.INSTALLING); break;
+                case 'BUILDING_WEB': setStatus(BuildStatus.BUILDING_WEB); break;
+                case 'CAPACITOR_INIT': 
+                case 'ANDROID_SYNC': 
+                    setStatus(BuildStatus.CAPACITOR); 
+                    break;
+                case 'COMPILING_APK': setStatus(BuildStatus.GRADLE); break;
+                case 'SUCCESS': setStatus(BuildStatus.SUCCESS); break;
+                case 'ERROR': setStatus(BuildStatus.ERROR); break;
+                default: break;
+            }
+          } 
+          
+          // C. Handle Sukses
+          else if (data.type === 'result') {
             if (data.success) {
               setApkUrl(data.downloadUrl);
-              addLog('Build completed successfully!', 'success');
+              setStatus(BuildStatus.SUCCESS);
+              addLog('Build completed successfully! APK is ready.', 'success');
             } else {
               setStatus(BuildStatus.ERROR);
               addLog(`Build failed: ${data.error}`, 'error');
             }
             eventSource.close();
-          } else if (data.type === 'error') {
+          } 
+          
+          // D. Handle Error
+          else if (data.type === 'error') {
              setStatus(BuildStatus.ERROR);
              addLog(data.message, 'error');
              eventSource.close();
           }
+
         } catch (e) {
           console.error('Error parsing SSE data', e);
         }
@@ -74,14 +116,13 @@ export default function App() {
         eventSource.close();
         if (status !== BuildStatus.SUCCESS) {
           setStatus(BuildStatus.ERROR);
-          addLog('Connection to build server failed or was interrupted.', 'error');
-          addLog('Please check if the Hugging Face Space is running and awake.', 'info');
+          addLog('Connection to build server lost.', 'error');
         }
       };
 
     } catch (error) {
       setStatus(BuildStatus.ERROR);
-      addLog('Critical system error during build pipeline.', 'error');
+      addLog('Critical system error during build pipeline initialization.', 'error');
     }
   };
 
@@ -127,14 +168,14 @@ export default function App() {
           </h1>
           <p className="text-lg text-zinc-400 max-w-2xl mx-auto">
             Automated CI/CD pipeline powered by Capacitor & Gradle. 
-            Simply paste your GitHub repository URL, and we'll handle the build process.
+            Customize your App Name, Icon, and Orientation instantly.
           </p>
         </div>
 
         {/* Build Pipeline Visualization */}
         <StatusSteps currentStatus={status} />
 
-        {/* Input Area */}
+        {/* Input Area (BuildForm sekarang ngirim object data) */}
         <BuildForm onBuild={handleBuild} status={status} apkUrl={apkUrl} />
 
         {/* Terminal / Logs Area */}
@@ -147,7 +188,7 @@ export default function App() {
                <span className="w-3 h-3 rounded-full bg-green-500 block"></span>
             </div>
           </div>
-          <Terminal logs={logs} status={status} />
+          <Terminal logs={logs} />
         </div>
       </main>
       

@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { Github, Play, Loader2, Download, CheckCircle2, AlertTriangle, Settings2, Image as ImageIcon } from 'lucide-react';
+import { Github, Play, Loader2, Download, CheckCircle2, AlertTriangle, Settings2, Smartphone, Image as ImageIcon } from 'lucide-react';
 import { BuildStatus } from '../types';
 
 interface BuildFormProps {
-  onBuild: (data: any) => void;
+  onBuild: (data: any) => void; // Update tipe data
   status: BuildStatus;
   apkUrl?: string;
 }
@@ -12,17 +12,17 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status, apkUrl })
   const [url, setUrl] = useState('');
   const [showSettings, setShowSettings] = useState(false);
   
-  // State Settingan Baru
-  const [appName, setAppName] = useState('KataSensei'); // Default nama
-  const [appId, setAppId] = useState('com.katasensei.app');
+  // State buat settingan baru
+  const [appName, setAppName] = useState('My App');
+  const [appId, setAppId] = useState('com.example.app');
   const [orientation, setOrientation] = useState('portrait');
-  const [fullscreen, setFullscreen] = useState(true); // Default Fullscreen biar keren
+  const [fullscreen, setFullscreen] = useState(true);
   const [iconUrl, setIconUrl] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (url.trim()) {
-      // Kirim Paket Lengkap ke App.tsx
+      // Kirim semua data ke App.tsx
       onBuild({
         repoUrl: url,
         appName,
@@ -41,7 +41,7 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status, apkUrl })
       <div className="bg-zinc-900/80 p-6 md:p-8 rounded-2xl border border-zinc-800/50 backdrop-blur-xl shadow-2xl relative overflow-hidden">
         
         <form onSubmit={handleSubmit} className="relative z-10 space-y-6">
-          {/* Repo URL */}
+          {/* Repo URL Input */}
           <div className="space-y-2">
             <label className="block text-sm font-medium text-zinc-300 ml-1">GitHub Repository URL</label>
             <div className="relative group/input">
@@ -60,17 +60,17 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status, apkUrl })
             </div>
           </div>
 
-          {/* Tombol Buka Settingan */}
+          {/* Toggle Advanced Settings */}
           <button 
             type="button"
             onClick={() => setShowSettings(!showSettings)}
             className="flex items-center gap-2 text-sm text-zinc-400 hover:text-brand-400 transition-colors"
           >
             <Settings2 className="h-4 w-4" />
-            {showSettings ? 'Hide App Settings' : 'Show App Settings (Name, Icon, Fullscreen)'}
+            {showSettings ? 'Hide App Settings' : 'Show App Settings (Name, Icon, etc.)'}
           </button>
 
-          {/* Menu Settingan */}
+          {/* Advanced Settings Area */}
           {showSettings && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-zinc-950/30 rounded-xl border border-zinc-800/50 animate-in slide-in-from-top-2">
                 
@@ -105,7 +105,7 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status, apkUrl })
                 {/* Icon URL */}
                 <div className="col-span-1 md:col-span-2 space-y-1">
                     <label className="text-xs text-zinc-400 flex items-center gap-1"><ImageIcon className="h-3 w-3"/> Icon URL (Direct Link PNG/JPG)</label>
-                    <input type="url" value={iconUrl} onChange={e => setIconUrl(e.target.value)} placeholder="https://i.imgur.com/contoh-logo.png" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white" />
+                    <input type="url" value={iconUrl} onChange={e => setIconUrl(e.target.value)} placeholder="https://example.com/my-logo.png" className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white" />
                 </div>
             </div>
           )}

@@ -5,10 +5,8 @@ import { StatusSteps } from './components/StatusSteps';
 import { BuildStatus, LogEntry } from './types';
 import { Layers, Rocket, Code2, Cpu } from 'lucide-react';
 
-// 1. Setup URL: Prioritas ENV Vercel, Fallback ke Hardcode
 const ENV_URL = process.env.NEXT_PUBLIC_BACKEND_URL;
 const FALLBACK_URL = 'https://fanlley-apk-builder.hf.space';
-// Hapus slash di akhir URL jika ada biar gak error
 const API_BASE_URL = (ENV_URL || FALLBACK_URL).replace(/\/$/, '');
 
 export default function App() {
@@ -16,7 +14,6 @@ export default function App() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [apkUrl, setApkUrl] = useState<string | undefined>(undefined);
 
-  // Helper buat nambah log rapi
   const addLog = useCallback((message: string, type: LogEntry['type'] = 'info') => {
     setLogs((prev) => [
       ...prev,
@@ -29,40 +26,46 @@ export default function App() {
     ]);
   }, []);
 
-  const handleBuild = async (repoUrl: string) => {
-    // Reset state awal
+  // FUNGSI BUILD YANG BARU (Menerima Object Data)
+  const handleBuild = async (formData: any) => {
     setStatus(BuildStatus.CLONING);
     setLogs([]);
     setApkUrl(undefined);
-    addLog(`Initiating build for: ${repoUrl}`, 'info');
+    
+    addLog(`Initiating build for: ${formData.repoUrl}`, 'info');
+    addLog(`⚙️ Config: ${formData.appName} | Fullscreen: ${formData.fullscreen}`, 'info');
 
     try {
       addLog(`Connecting to Build Server at ${API_BASE_URL}...`, 'info');
       
-      // 2. Buka Koneksi Streaming (SSE)
-      const eventSource = new EventSource(`${API_BASE_URL}/api/build/stream?repoUrl=${encodeURIComponent(repoUrl)}`);
+      // Bikin URL Parameter buat dikirim ke Backend
+      const params = new URLSearchParams({
+        repoUrl: formData.repoUrl,
+        appName: formData.appName || 'My App',
+        appId: formData.appId || 'com.appbuilder.generated',
+        orientation: formData.orientation || 'portrait',
+        fullscreen: formData.fullscreen.toString(),
+        iconUrl: formData.iconUrl || ''
+      });
+
+      const streamUrl = `${API_BASE_URL}/api/build/stream?${params.toString()}`;
+      const eventSource = new EventSource(streamUrl);
 
       eventSource.onopen = () => {
-        addLog('Connected to Cloud Build Engine. Waiting for data...', 'success');
+        addLog('Connected to Cloud Build Engine. Sending configuration...', 'success');
       };
 
       eventSource.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
 
-          // A. Handle Log Masuk
           if (data.type === 'log') {
             addLog(data.log.message, data.log.type);
-          } 
-          
-          // B. Handle Status Berubah (Mapping Backend -> Frontend)
-          else if (data.type === 'status') {
-            // Kita map status dari server biar cocok sama Enum di Frontend
+          } else if (data.type === 'status') {
             switch (data.status) {
                 case 'CLONING': setStatus(BuildStatus.CLONING); break;
                 case 'INSTALLING': setStatus(BuildStatus.INSTALLING); break;
                 case 'BUILDING_WEB': setStatus(BuildStatus.BUILDING_WEB); break;
-                // Gabungkan step Capacitor jadi satu status di UI
                 case 'CAPACITOR_INIT': 
                 case 'ANDROID_SYNC': 
                     setStatus(BuildStatus.CAPACITOR); 
@@ -70,15 +73,9 @@ export default function App() {
                 case 'COMPILING_APK': setStatus(BuildStatus.GRADLE); break;
                 case 'SUCCESS': setStatus(BuildStatus.SUCCESS); break;
                 case 'ERROR': setStatus(BuildStatus.ERROR); break;
-                default: 
-                    // Kalau ada status baru, tetep update tapi log warning
-                    console.warn('Unknown status:', data.status);
-                    break;
+                default: break;
             }
-          } 
-          
-          // C. Handle Hasil Akhir
-          else if (data.type === 'result') {
+          } else if (data.type === 'result') {
             if (data.success) {
               setApkUrl(data.downloadUrl);
               setStatus(BuildStatus.SUCCESS);
@@ -87,31 +84,23 @@ export default function App() {
               setStatus(BuildStatus.ERROR);
               addLog(`Build failed: ${data.error}`, 'error');
             }
-            eventSource.close(); // Tutup koneksi kalau udah selesai
-          } 
-          
-          // D. Handle Error Explicit
-          else if (data.type === 'error') {
+            eventSource.close();
+          } else if (data.type === 'error') {
              setStatus(BuildStatus.ERROR);
              addLog(data.message, 'error');
              eventSource.close();
           }
-
         } catch (e) {
           console.error('Error parsing SSE data', e);
         }
       };
 
-      // Handle Error Koneksi (Misal Server Mati/Timeout)
       eventSource.onerror = (err) => {
         console.error('EventSource failed:', err);
         eventSource.close();
-        
-        // Cuma set error kalau belum sukses
         if (status !== BuildStatus.SUCCESS) {
           setStatus(BuildStatus.ERROR);
           addLog('Connection to build server lost.', 'error');
-          addLog('Tip: Check if Hugging Face Space is running (it might be sleeping).', 'info');
         }
       };
 
@@ -123,7 +112,6 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-zinc-900 via-zinc-950 to-black text-zinc-100 selection:bg-brand-500/30">
-      {/* Header */}
       <header className="border-b border-zinc-800 bg-zinc-950/50 backdrop-blur-md sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -135,45 +123,29 @@ export default function App() {
             </span>
           </div>
           <div className="flex items-center gap-4 text-sm font-medium text-zinc-400">
-            <div className="flex items-center gap-1.5 hidden md:flex">
-              <Code2 size={14} />
-              <span>React</span>
-            </div>
-            <div className="flex items-center gap-1.5 hidden md:flex">
-              <Cpu size={14} />
-              <span>Node.js</span>
-            </div>
-            <div className="flex items-center gap-1.5 hidden md:flex">
-              <Rocket size={14} />
-              <span>Capacitor</span>
-            </div>
+            <div className="flex items-center gap-1.5 hidden md:flex"><Code2 size={14} /><span>React</span></div>
+            <div className="flex items-center gap-1.5 hidden md:flex"><Cpu size={14} /><span>Node.js</span></div>
+            <div className="flex items-center gap-1.5 hidden md:flex"><Rocket size={14} /><span>Capacitor</span></div>
             <div className="h-4 w-px bg-zinc-800 hidden md:block"></div>
-            <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
-              Cloud Engine Ready
-            </span>
+            <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">Cloud Engine Ready</span>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        {/* Hero Section */}
         <div className="text-center mb-12 space-y-4">
           <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight text-white mb-4">
             Turn your <span className="text-transparent bg-clip-text bg-gradient-to-r from-brand-400 to-indigo-400">Web App</span> into an <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400">APK</span>
           </h1>
           <p className="text-lg text-zinc-400 max-w-2xl mx-auto">
             Automated CI/CD pipeline powered by Capacitor & Gradle. 
-            Simply paste your GitHub repository URL, and we'll handle the build process.
+            Customize your App Name, Icon, and Orientation instantly.
           </p>
         </div>
 
-        {/* Build Pipeline Visualization */}
         <StatusSteps currentStatus={status} />
-
-        {/* Input Area */}
         <BuildForm onBuild={handleBuild} status={status} apkUrl={apkUrl} />
 
-        {/* Terminal / Logs Area */}
         <div className="mt-12 max-w-5xl mx-auto">
           <div className="mb-4 flex items-center justify-between">
             <h2 className="text-lg font-semibold text-zinc-200">Build Logs</h2>
@@ -183,7 +155,6 @@ export default function App() {
                <span className="w-3 h-3 rounded-full bg-green-500 block"></span>
             </div>
           </div>
-          {/* Pastikan Terminal menerima props logs yang sesuai */}
           <Terminal logs={logs} />
         </div>
       </main>
