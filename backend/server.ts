@@ -21,7 +21,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(WORKSPACE_DIR)) fs.mkdirSync(WORKSPACE_DIR, { recursive: true, mode: 0o777 });
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true, mode: 0o777 });
 
-app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v2.2 (Safe Area Fix) is Running. 🚀'); });
+app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v2.3 (Solid Status Bar Fix) is Running. 🚀'); });
 app.use('/download', express.static(PUBLIC_DIR) as any);
 
 const sendEvent = (res: any, data: any) => {
@@ -55,7 +55,6 @@ app.get('/api/build/stream', async (req, res) => {
     const finalAppName = (appName as string) || 'My App';
     const finalAppId = (appId as string) || 'com.appbuilder.generated';
     const finalOrientation = (orientation as string) || 'portrait';
-    // Cek apakah user minta fullscreen atau tidak
     const isFullscreen = fullscreen === 'true';
 
     const buildId = uuidv4();
@@ -70,7 +69,7 @@ app.get('/api/build/stream', async (req, res) => {
         if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
 
         log(`Starting build process ID: ${buildId}`, 'info');
-        log(`Settings: Name=${finalAppName}, Fullscreen=${isFullscreen} (Safe Area Mode)`, 'info');
+        log(`Settings: Name=${finalAppName}, Fullscreen=${isFullscreen}`, 'info');
         
         updateStatus('CLONING');
         log(`Cloning ${repoUrl}...`, 'command');
@@ -117,20 +116,22 @@ app.get('/api/build/stream', async (req, res) => {
 
         // 2. HANDLE LAYOUT (FULLSCREEN VS SAFE AREA)
         if (isFullscreen) {
-            // MODE GAME: Bablas sampai atas (Immersive)
+            // MODE GAME: Bablas sampai atas
             log('Mode: Fullscreen (Immersive)', 'info');
             await runCommand(`sed -i 's|parent="AppTheme.NoActionBar"|parent="Theme.AppCompat.NoActionBar.FullScreen"|g' ${stylesPath}`, [], projectDir, log);
             await runCommand(`sed -i 's|<\/style>|<item name="android:windowFullscreen">true<\/item><\/style>|g' ${stylesPath}`, [], projectDir, log);
         } else {
-            // MODE APLIKASI BIASA (InDrive Style): Ada jarak aman di atas
-            log('Mode: Safe Area (Fits System Windows)', 'info');
-            // Kita paksa Android buat "Minggirin" konten dari status bar
-            // Tambahkan item android:fitsSystemWindows = true
+            // MODE APLIKASI BIASA (InDrive Style)
+            log('Mode: Safe Area (Solid Status Bar)', 'info');
+            
+            // A. Paksa FitsSystemWindows
             await runCommand(`sed -i 's|<\/style>|<item name="android:fitsSystemWindows">true<\/item><\/style>|g' ${stylesPath}`, [], projectDir, log);
             
-            // Opsional: Ubah warna status bar jadi agak gelap biar teks jam kelihatan
-            // (Default Capacitor biasanya transparan, ini biar aman)
+            // B. Paksa Status Bar HITAM (Bukan Transparan)
             await runCommand(`sed -i 's|<\/style>|<item name="android:statusBarColor">@android:color/black<\/item><\/style>|g' ${stylesPath}`, [], projectDir, log);
+            
+            // C. MATIKAN Translucent Status (Ini biang keroknya kenapa masih tembus)
+            await runCommand(`sed -i 's|<\/style>|<item name="android:windowTranslucentStatus">false<\/item><\/style>|g' ${stylesPath}`, [], projectDir, log);
         }
 
         // 3. SET CUSTOM ICON
@@ -141,9 +142,11 @@ app.get('/api/build/stream', async (req, res) => {
             for (const folder of folders) {
                 const target = path.join(resDir, folder, 'ic_launcher.png');
                 const targetRound = path.join(resDir, folder, 'ic_launcher_round.png');
+                // Download pakai curl
                 await runCommand(`curl -L "${iconUrl}" -o ${target}`, [], projectDir);
                 await runCommand(`cp ${target} ${targetRound}`, [], projectDir);
             }
+            log('Custom icon applied!', 'success');
         }
 
         updateStatus('ANDROID_SYNC');
