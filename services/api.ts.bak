@@ -2,7 +2,6 @@ import { BuildStatus } from '../types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://fanlley-apk-builder.hf.space';
 
-// Tambahin parameter baru di interface function
 export const startBuildStream = (
   repoUrl: string,
   settings: {
@@ -11,6 +10,8 @@ export const startBuildStream = (
     orientation: string;
     iconUrl: string;
     fullscreen: boolean;
+    versionCode: string; // Baru
+    versionName: string; // Baru
   },
   onLog: (msg: string) => void,
   onStatus: (status: BuildStatus) => void,
@@ -19,14 +20,15 @@ export const startBuildStream = (
 ) => {
   const cleanUrl = BASE_URL.replace(/\/$/, '');
   
-  // Bikin Query String yang panjang
   const queryParams = new URLSearchParams({
     repoUrl: repoUrl,
     appName: settings.appName,
     appId: settings.appId,
     orientation: settings.orientation,
     iconUrl: settings.iconUrl,
-    fullscreen: settings.fullscreen.toString()
+    fullscreen: settings.fullscreen.toString(),
+    versionCode: settings.versionCode,
+    versionName: settings.versionName
   }).toString();
 
   const eventSource = new EventSource(`${cleanUrl}/api/build/stream?${queryParams}`);

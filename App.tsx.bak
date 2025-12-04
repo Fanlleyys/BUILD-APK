@@ -26,26 +26,26 @@ export default function App() {
     ]);
   }, []);
 
-  // FUNGSI BUILD YANG BARU (Menerima Object Data)
   const handleBuild = async (formData: any) => {
     setStatus(BuildStatus.CLONING);
     setLogs([]);
     setApkUrl(undefined);
     
     addLog(`Initiating build for: ${formData.repoUrl}`, 'info');
-    addLog(`⚙️ Config: ${formData.appName} | Fullscreen: ${formData.fullscreen}`, 'info');
+    addLog(`⚙️ Config: ${formData.appName} (v${formData.versionName}) | Fullscreen: ${formData.fullscreen}`, 'info');
 
     try {
       addLog(`Connecting to Build Server at ${API_BASE_URL}...`, 'info');
       
-      // Bikin URL Parameter buat dikirim ke Backend
       const params = new URLSearchParams({
         repoUrl: formData.repoUrl,
         appName: formData.appName || 'My App',
         appId: formData.appId || 'com.appbuilder.generated',
         orientation: formData.orientation || 'portrait',
         fullscreen: formData.fullscreen.toString(),
-        iconUrl: formData.iconUrl || ''
+        iconUrl: formData.iconUrl || '',
+        versionCode: formData.versionCode || '1',
+        versionName: formData.versionName || '1.0'
       });
 
       const streamUrl = `${API_BASE_URL}/api/build/stream?${params.toString()}`;
@@ -139,7 +139,7 @@ export default function App() {
           </h1>
           <p className="text-lg text-zinc-400 max-w-2xl mx-auto">
             Automated CI/CD pipeline powered by Capacitor & Gradle. 
-            Customize your App Name, Icon, and Orientation instantly.
+            Customize your App Name, Icon, Version, and Layout instantly.
           </p>
         </div>
 

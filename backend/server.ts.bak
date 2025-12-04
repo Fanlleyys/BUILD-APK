@@ -21,7 +21,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(WORKSPACE_DIR)) fs.mkdirSync(WORKSPACE_DIR, { recursive: true, mode: 0o777 });
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true, mode: 0o777 });
 
-app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v2.3 (Solid Status Bar Fix) is Running. 🚀'); });
+app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v3.0 (Versioning + UI Fix) is Running. 🚀'); });
 app.use('/download', express.static(PUBLIC_DIR) as any);
 
 const sendEvent = (res: any, data: any) => {
@@ -40,7 +40,7 @@ function runCommand(command: string, args: string[], cwd: string, logFn?: (msg: 
 }
 
 app.get('/api/build/stream', async (req, res) => {
-    const { repoUrl, appName, appId, orientation, iconUrl, fullscreen } = req.query;
+    const { repoUrl, appName, appId, orientation, iconUrl, fullscreen, versionCode, versionName } = req.query;
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -56,6 +56,8 @@ app.get('/api/build/stream', async (req, res) => {
     const finalAppId = (appId as string) || 'com.appbuilder.generated';
     const finalOrientation = (orientation as string) || 'portrait';
     const isFullscreen = fullscreen === 'true';
+    const vCode = (versionCode as string) || '1';
+    const vName = (versionName as string) || '1.0';
 
     const buildId = uuidv4();
     const projectDir = path.join(WORKSPACE_DIR, buildId);
@@ -69,7 +71,7 @@ app.get('/api/build/stream', async (req, res) => {
         if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
 
         log(`Starting build process ID: ${buildId}`, 'info');
-        log(`Settings: Name=${finalAppName}, Fullscreen=${isFullscreen}`, 'info');
+        log(`Config: ${finalAppName} (v${vName}) | Fullscreen: ${isFullscreen}`, 'info');
         
         updateStatus('CLONING');
         log(`Cloning ${repoUrl}...`, 'command');
@@ -108,33 +110,43 @@ app.get('/api/build/stream', async (req, res) => {
         log('Applying custom settings...', 'info');
         const androidManifestPath = path.join(projectDir, 'android/app/src/main/AndroidManifest.xml');
         const stylesPath = path.join(projectDir, 'android/app/src/main/res/values/styles.xml');
+        const buildGradlePath = path.join(projectDir, 'android/app/build.gradle');
 
-        // 1. SET ORIENTATION
+        // 1. SET VERSION CODE & NAME (Edit build.gradle)
+        log(`Setting Version: Code=${vCode}, Name=${vName}`, 'info');
+        // Ganti default versionCode 1
+        await runCommand(`sed -i 's/versionCode 1/versionCode ${vCode}/g' ${buildGradlePath}`, [], projectDir);
+        // Ganti default versionName "1.0"
+        await runCommand(`sed -i 's/versionName "1.0"/versionName "${vName}"/g' ${buildGradlePath}`, [], projectDir);
+
+        // 2. SET ORIENTATION
         if (finalOrientation !== 'user') {
             await runCommand(`sed -i 's/<activity/<activity android:screenOrientation="${finalOrientation}"/g' ${androidManifestPath}`, [], projectDir, log);
         }
 
-        // 2. HANDLE LAYOUT (FULLSCREEN VS SAFE AREA)
+        // 3. HANDLE LAYOUT (FULLSCREEN VS SAFE AREA)
         if (isFullscreen) {
-            // MODE GAME: Bablas sampai atas
             log('Mode: Fullscreen (Immersive)', 'info');
             await runCommand(`sed -i 's|parent="AppTheme.NoActionBar"|parent="Theme.AppCompat.NoActionBar.FullScreen"|g' ${stylesPath}`, [], projectDir, log);
             await runCommand(`sed -i 's|<\/style>|<item name="android:windowFullscreen">true<\/item><\/style>|g' ${stylesPath}`, [], projectDir, log);
         } else {
-            // MODE APLIKASI BIASA (InDrive Style)
             log('Mode: Safe Area (Solid Status Bar)', 'info');
+            // FORCE STATUS BAR BLACK & OPAQUE
+            // Kita ganti parent theme biar lebih patuh
+            await runCommand(`sed -i 's|parent="AppTheme.NoActionBar"|parent="Theme.AppCompat.NoActionBar"|g' ${stylesPath}`, [], projectDir, log);
             
-            // A. Paksa FitsSystemWindows
-            await runCommand(`sed -i 's|<\/style>|<item name="android:fitsSystemWindows">true<\/item><\/style>|g' ${stylesPath}`, [], projectDir, log);
+            // Inject properties
+            const styleItems = [
+                '<item name="android:fitsSystemWindows">true</item>',
+                '<item name="android:windowTranslucentStatus">false</item>',
+                '<item name="android:statusBarColor">@android:color/black</item>',
+                '<item name="android:windowLightStatusBar">false</item>' // Biar icon putih
+            ].join('');
             
-            // B. Paksa Status Bar HITAM (Bukan Transparan)
-            await runCommand(`sed -i 's|<\/style>|<item name="android:statusBarColor">@android:color/black<\/item><\/style>|g' ${stylesPath}`, [], projectDir, log);
-            
-            // C. MATIKAN Translucent Status (Ini biang keroknya kenapa masih tembus)
-            await runCommand(`sed -i 's|<\/style>|<item name="android:windowTranslucentStatus">false<\/item><\/style>|g' ${stylesPath}`, [], projectDir, log);
+            await runCommand(`sed -i 's|<\/style>|${styleItems}<\/style>|g' ${stylesPath}`, [], projectDir, log);
         }
 
-        // 3. SET CUSTOM ICON
+        // 4. SET CUSTOM ICON
         if (iconUrl && typeof iconUrl === 'string' && iconUrl.startsWith('http')) {
             log('Downloading custom icon...', 'command');
             const resDir = path.join(projectDir, 'android/app/src/main/res');
@@ -142,11 +154,9 @@ app.get('/api/build/stream', async (req, res) => {
             for (const folder of folders) {
                 const target = path.join(resDir, folder, 'ic_launcher.png');
                 const targetRound = path.join(resDir, folder, 'ic_launcher_round.png');
-                // Download pakai curl
                 await runCommand(`curl -L "${iconUrl}" -o ${target}`, [], projectDir);
                 await runCommand(`cp ${target} ${targetRound}`, [], projectDir);
             }
-            log('Custom icon applied!', 'success');
         }
 
         updateStatus('ANDROID_SYNC');
@@ -162,7 +172,7 @@ app.get('/api/build/stream', async (req, res) => {
         const expectedApkPath = path.join(androidDir, 'app/build/outputs/apk/debug/app-debug.apk');
         
         if (fs.existsSync(expectedApkPath)) {
-             const publicApkName = `${finalAppName.replace(/\s+/g, '_')}-${buildId}.apk`;
+             const publicApkName = `${finalAppName.replace(/\s+/g, '_')}_v${vName}.apk`;
              const publicApkPath = path.join(PUBLIC_DIR, publicApkName);
              fs.renameSync(expectedApkPath, publicApkPath);
              

@@ -21,7 +21,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(WORKSPACE_DIR)) fs.mkdirSync(WORKSPACE_DIR, { recursive: true, mode: 0o777 });
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true, mode: 0o777 });
 
-app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v3.0 (Versioning + UI Fix) is Running. 🚀'); });
+app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v3.1 (Ultimate Layout Fix) is Running. 🚀'); });
 app.use('/download', express.static(PUBLIC_DIR) as any);
 
 const sendEvent = (res: any, data: any) => {
@@ -71,7 +71,7 @@ app.get('/api/build/stream', async (req, res) => {
         if (!fs.existsSync(projectDir)) fs.mkdirSync(projectDir, { recursive: true });
 
         log(`Starting build process ID: ${buildId}`, 'info');
-        log(`Config: ${finalAppName} (v${vName}) | Fullscreen: ${isFullscreen}`, 'info');
+        log(`Config: ${finalAppName} | Fullscreen: ${isFullscreen}`, 'info');
         
         updateStatus('CLONING');
         log(`Cloning ${repoUrl}...`, 'command');
@@ -106,47 +106,45 @@ app.get('/api/build/stream', async (req, res) => {
         log('Adding Android platform...', 'command');
         await runCommand('npx', ['cap', 'add', 'android'], projectDir, log);
 
-        // --- CUSTOMIZATION AREA ---
+        // --- CUSTOMIZATION AREA (THE FIX) ---
         log('Applying custom settings...', 'info');
         const androidManifestPath = path.join(projectDir, 'android/app/src/main/AndroidManifest.xml');
         const stylesPath = path.join(projectDir, 'android/app/src/main/res/values/styles.xml');
         const buildGradlePath = path.join(projectDir, 'android/app/build.gradle');
 
-        // 1. SET VERSION CODE & NAME (Edit build.gradle)
-        log(`Setting Version: Code=${vCode}, Name=${vName}`, 'info');
-        // Ganti default versionCode 1
+        // 1. VERSIONING
         await runCommand(`sed -i 's/versionCode 1/versionCode ${vCode}/g' ${buildGradlePath}`, [], projectDir);
-        // Ganti default versionName "1.0"
         await runCommand(`sed -i 's/versionName "1.0"/versionName "${vName}"/g' ${buildGradlePath}`, [], projectDir);
 
-        // 2. SET ORIENTATION
+        // 2. ORIENTATION
         if (finalOrientation !== 'user') {
             await runCommand(`sed -i 's/<activity/<activity android:screenOrientation="${finalOrientation}"/g' ${androidManifestPath}`, [], projectDir, log);
         }
 
-        // 3. HANDLE LAYOUT (FULLSCREEN VS SAFE AREA)
+        // 3. LAYOUT FIX (INI YANG PENTING)
         if (isFullscreen) {
+            // MODE GAME (Bablas)
             log('Mode: Fullscreen (Immersive)', 'info');
             await runCommand(`sed -i 's|parent="AppTheme.NoActionBar"|parent="Theme.AppCompat.NoActionBar.FullScreen"|g' ${stylesPath}`, [], projectDir, log);
             await runCommand(`sed -i 's|<\/style>|<item name="android:windowFullscreen">true<\/item><\/style>|g' ${stylesPath}`, [], projectDir, log);
         } else {
+            // MODE APLIKASI BIASA (Safe Area)
             log('Mode: Safe Area (Solid Status Bar)', 'info');
-            // FORCE STATUS BAR BLACK & OPAQUE
-            // Kita ganti parent theme biar lebih patuh
-            await runCommand(`sed -i 's|parent="AppTheme.NoActionBar"|parent="Theme.AppCompat.NoActionBar"|g' ${stylesPath}`, [], projectDir, log);
             
-            // Inject properties
-            const styleItems = [
-                '<item name="android:fitsSystemWindows">true</item>',
-                '<item name="android:windowTranslucentStatus">false</item>',
-                '<item name="android:statusBarColor">@android:color/black</item>',
-                '<item name="android:windowLightStatusBar">false</item>' // Biar icon putih
+            // Kita suntikkan item-item sakti dari ChatGPT tadi ke dalam styles.xml
+            // Menggunakan sed untuk menyisipkan sebelum tag penutup </style>
+            const styleFix = [
+                '<item name="android:windowTranslucentStatus">false</item>', // Status bar TIDAK transparan
+                '<item name="android:fitsSystemWindows">true</item>',         // Konten turun ke bawah status bar
+                '<item name="android:statusBarColor">@android:color/black</item>', // Warna status bar hitam
+                '<item name="android:windowLightStatusBar">false</item>'      // Icon status bar putih
             ].join('');
-            
-            await runCommand(`sed -i 's|<\/style>|${styleItems}<\/style>|g' ${stylesPath}`, [], projectDir, log);
+
+            // Perintah sed sakti
+            await runCommand(`sed -i 's|<\/style>|${styleFix}<\/style>|g' ${stylesPath}`, [], projectDir, log);
         }
 
-        // 4. SET CUSTOM ICON
+        // 4. CUSTOM ICON
         if (iconUrl && typeof iconUrl === 'string' && iconUrl.startsWith('http')) {
             log('Downloading custom icon...', 'command');
             const resDir = path.join(projectDir, 'android/app/src/main/res');
