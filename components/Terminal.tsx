@@ -1,5 +1,5 @@
-import React, { useEffect, useRef } from 'react';
-import { Terminal as TerminalIcon, X, Minus, Square, CheckCircle2, AlertCircle, Loader2, ChevronRight } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Terminal as TerminalIcon, X, Minus, Square, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { BuildStatus, LogEntry } from '../types';
 
 interface TerminalProps {
@@ -7,7 +7,6 @@ interface TerminalProps {
   status: BuildStatus;
 }
 
-// Mapping Status ke Persentase Progress
 const getProgress = (status: BuildStatus) => {
   switch (status) {
     case BuildStatus.IDLE: return 0;
@@ -18,7 +17,7 @@ const getProgress = (status: BuildStatus) => {
     case BuildStatus.ANDROID_SYNC: return 80;
     case BuildStatus.COMPILING_APK: return 90;
     case BuildStatus.SUCCESS: return 100;
-    case BuildStatus.ERROR: return 100; // Full red
+    case BuildStatus.ERROR: return 100;
     default: return 0;
   }
 };
@@ -26,11 +25,6 @@ const getProgress = (status: BuildStatus) => {
 export const Terminal: React.FC<TerminalProps> = ({ logs, status }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const progress = getProgress(status);
-
-  // Auto scroll ke bawah setiap ada log baru
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
 
   return (
     <div className="w-full max-w-4xl mx-auto mt-8 animate-in slide-in-from-bottom-10 duration-700">
@@ -52,7 +46,6 @@ export const Terminal: React.FC<TerminalProps> = ({ logs, status }) => {
             className={`h-full transition-all duration-1000 ease-out ${status === BuildStatus.ERROR ? 'bg-red-600' : status === BuildStatus.SUCCESS ? 'bg-emerald-500' : 'bg-brand-500'}`}
             style={{ width: `${progress}%` }}
         >
-            {/* Efek Kilatan Cahaya di Progress Bar */}
             <div className="absolute top-0 right-0 bottom-0 w-20 bg-gradient-to-r from-transparent to-white/50 blur-sm transform translate-x-full animate-[loading_2s_infinite]"></div>
         </div>
       </div>
@@ -79,7 +72,15 @@ export const Terminal: React.FC<TerminalProps> = ({ logs, status }) => {
         </div>
 
         {/* Terminal Body */}
-        <div className="p-4 h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-zinc-700 scrollbar-track-transparent space-y-1">
+        {/* 👇 Scrollbar Styling ada di sini (Tailwind Arbitrary Values) */}
+        <div className="p-4 h-[400px] overflow-y-auto space-y-1 
+            scrollbar-thin 
+            [&::-webkit-scrollbar]:w-1.5 
+            [&::-webkit-scrollbar-track]:bg-transparent 
+            [&::-webkit-scrollbar-thumb]:bg-zinc-800 
+            [&::-webkit-scrollbar-thumb]:rounded-full 
+            [&::-webkit-scrollbar-thumb]:hover:bg-zinc-700"
+        >
             {logs.length === 0 && (
                 <div className="text-zinc-600 italic opacity-50">Waiting for command...</div>
             )}
@@ -101,7 +102,6 @@ export const Terminal: React.FC<TerminalProps> = ({ logs, status }) => {
                 </div>
             ))}
             
-            {/* Cursor Blinking Effect */}
             {status !== BuildStatus.SUCCESS && status !== BuildStatus.ERROR && (
                 <div className="flex items-center gap-2 mt-2">
                     <span className="text-brand-500">➜</span>
@@ -112,7 +112,7 @@ export const Terminal: React.FC<TerminalProps> = ({ logs, status }) => {
             <div ref={bottomRef} />
         </div>
 
-        {/* Scanline Effect (Overlay) */}
+        {/* Scanline Effect */}
         <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] z-20 bg-[length:100%_2px,3px_100%] opacity-20"></div>
       </div>
     </div>

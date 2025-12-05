@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Github, Play, Loader2, ArrowRight, Monitor, Smartphone, LayoutTemplate, Box, CheckCircle2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Github, Play, Loader2, ArrowRight, Monitor, Smartphone, LayoutTemplate, Box, CheckCircle2, Upload, Image as ImageIcon } from 'lucide-react';
 import { BuildStatus } from '../types';
 import Stepper, { Step } from './Stepper';
 import { BorderBeam } from './BorderBeam';
@@ -20,7 +20,9 @@ const generatePackageId = (appName: string): string => {
 
 export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
   const [step, setStep] = useState(1); 
+  const fileInputRef = useRef<HTMLInputElement>(null); // Ref buat input file
   
+  // Form State
   const [url, setUrl] = useState('');
   const [appName, setAppName] = useState('KataSensei');
   const [appId, setAppId] = useState('com.katasensei.app');
@@ -43,6 +45,19 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
 
   const handleBack = () => {
     if (step > 1) setStep(step - 1);
+  };
+
+  // ✅ Fungsi Handle Upload File
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        // Hasilnya berupa Base64 string, bisa langsung masuk ke iconUrl
+        setIconUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
   };
 
   const handleSubmit = () => {
@@ -134,7 +149,6 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                             <button 
                                 onClick={handleNext}
                                 disabled={!url || !isGithubUrl}
-                                // 👇 CLASS 'cursor-target'
                                 className="cursor-target group relative px-8 py-4 bg-zinc-100 text-zinc-950 font-bold text-lg rounded-full hover:scale-105 transition-all disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed overflow-hidden"
                             >
                                 <span className="relative z-10 flex items-center gap-2">
@@ -151,7 +165,7 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                     <div className="space-y-8">
                         <div className="flex items-center justify-between border-b border-white/5 pb-4">
                             <h2 className="text-2xl font-bold text-white">App Settings</h2>
-                            <button onClick={handleBack} className="text-sm text-zinc-500 hover:text-brand-400 transition-colors">Change Repo</button>
+                            <button onClick={handleBack} className="cursor-target text-sm text-zinc-500 hover:text-brand-400 transition-colors">Change Repo</button>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -180,13 +194,52 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                             {/* Right Col */}
                             <div className="space-y-6">
                                 <div>
-                                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 block">App Icon URL</label>
-                                    <div className="flex gap-4">
-                                        <input value={iconUrl} onChange={e => setIconUrl(e.target.value)} className="flex-1 bg-zinc-900/50 border border-zinc-700/50 rounded-xl px-5 py-4 text-white text-sm outline-none transition-all" placeholder="https://example.com/icon.png" />
-                                        <div className="w-16 h-16 bg-zinc-800 rounded-2xl border border-zinc-700 flex items-center justify-center overflow-hidden shrink-0 shadow-lg">
+                                    <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider mb-2 block">App Icon</label>
+                                    <div className="flex gap-3">
+                                        {/* Input URL */}
+                                        <div className="relative flex-1">
+                                            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                                                <ImageIcon className="h-4 w-4 text-zinc-500" />
+                                            </div>
+                                            <input 
+                                                value={iconUrl.startsWith('data:') ? '(Image Uploaded)' : iconUrl} 
+                                                onChange={e => setIconUrl(e.target.value)} 
+                                                className="w-full bg-zinc-900/50 border border-zinc-700/50 rounded-xl pl-10 pr-4 py-4 text-white text-sm outline-none transition-all focus:border-brand-500" 
+                                                placeholder="https://... or Upload" 
+                                                disabled={iconUrl.startsWith('data:')} // Disable text input if file uploaded
+                                            />
+                                            {iconUrl.startsWith('data:') && (
+                                                <button 
+                                                    onClick={() => setIconUrl('')}
+                                                    className="absolute inset-y-0 right-2 flex items-center text-zinc-500 hover:text-red-400"
+                                                >
+                                                    <span className="text-xs font-bold px-2">Clear</span>
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Tombol Upload */}
+                                        <input 
+                                            type="file" 
+                                            ref={fileInputRef} 
+                                            onChange={handleFileUpload} 
+                                            className="hidden" 
+                                            accept="image/*"
+                                        />
+                                        <button 
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="cursor-target px-4 bg-zinc-800 border border-zinc-700 rounded-xl hover:bg-zinc-700 hover:border-zinc-600 transition-all flex items-center justify-center group"
+                                            title="Upload from Device"
+                                        >
+                                            <Upload className="h-5 w-5 text-zinc-400 group-hover:text-white" />
+                                        </button>
+
+                                        {/* Preview Box */}
+                                        <div className="w-14 h-14 bg-zinc-800 rounded-xl border border-zinc-700 flex items-center justify-center overflow-hidden shrink-0 shadow-lg">
                                             {iconUrl ? <img src={iconUrl} alt="Preview" className="w-full h-full object-cover" /> : <Box className="text-zinc-600 h-6 w-6" />}
                                         </div>
                                     </div>
+                                    <p className="text-[10px] text-zinc-600 mt-2 ml-1">Paste URL or upload local image (max 2MB recommended)</p>
                                 </div>
                                 
                                 <div className="p-5 bg-zinc-800/30 rounded-2xl border border-zinc-700/50 space-y-4">
@@ -217,8 +270,8 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                         </div>
 
                         <div className="flex justify-between mt-8 pt-6 border-t border-white/5">
-                            <button onClick={handleBack} className="px-6 py-3 text-zinc-400 hover:text-white transition-colors font-medium">Back</button>
-                            <button onClick={handleNext} className="px-10 py-3 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-brand-500/20 transition-all hover:scale-105 active:scale-95">
+                            <button onClick={handleBack} className="cursor-target px-6 py-3 text-zinc-400 hover:text-white transition-colors font-medium">Back</button>
+                            <button onClick={handleNext} className="cursor-target px-10 py-3 bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold rounded-xl shadow-lg shadow-brand-500/20 transition-all hover:scale-105 active:scale-95">
                                 Review Configuration
                             </button>
                         </div>
@@ -259,7 +312,6 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                             <button
                                 onClick={handleSubmit}
                                 disabled={isLoading}
-                                // 👇 CLASS 'cursor-target'
                                 className={`cursor-target w-full max-w-md flex items-center justify-center px-8 py-5 rounded-2xl text-xl font-bold text-white transition-all shadow-2xl relative overflow-hidden group
                                     ${isLoading 
                                     ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' 
@@ -279,7 +331,6 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                             </button>
                             
                             {!isLoading && (
-                                // 👇 CLASS 'cursor-target'
                                 <button onClick={handleBack} className="cursor-target text-zinc-500 text-sm hover:text-zinc-300 transition-colors mt-2">
                                     Back to Configuration
                                 </button>
