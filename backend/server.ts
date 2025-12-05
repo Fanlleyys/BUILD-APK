@@ -12,11 +12,9 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 7860;
 
-// ✅ UPDATE 1: Tambah limit body parser biar bisa terima gambar Base64 besar
 app.use(express.json({ limit: '50mb' }) as any);
 app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
 
-// ✅ UPDATE 2: CORS diizinkan untuk semua (bisa dispesifikkan kalau mau)
 app.use(cors({
     origin: '*', 
     methods: ['GET', 'POST'],
@@ -29,7 +27,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(WORKSPACE_DIR)) fs.mkdirSync(WORKSPACE_DIR, { recursive: true, mode: 0o777 });
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true, mode: 0o777 });
 
-app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v4.0 (POST Support + Base64 Icon) is Running. 🚀'); });
+app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v4.1 (Icon Fix) is Running. 🚀'); });
 app.use('/download', express.static(PUBLIC_DIR) as any);
 
 const sendEvent = (res: any, data: any) => {
@@ -56,9 +54,7 @@ function runCommand(command: string, args: string[], cwd: string, logFn?: (msg: 
     });
 }
 
-// ✅ UPDATE 3: Ganti GET jadi POST
 app.post('/api/build/stream', async (req, res) => {
-    // ✅ Ambil data dari req.body (bukan req.query)
     const { repoUrl, appName, appId, orientation, iconUrl, fullscreen, versionCode, versionName } = req.body;
 
     res.setHeader('Content-Type', 'text/event-stream');
@@ -74,7 +70,7 @@ app.post('/api/build/stream', async (req, res) => {
     const finalAppName = (appName as string) || 'My App';
     const finalAppId = (appId as string) || 'com.appbuilder.generated';
     const finalOrientation = (orientation as string) || 'portrait';
-    const isFullscreen = fullscreen === true || fullscreen === 'true'; // Handle boolean/string
+    const isFullscreen = fullscreen === true || fullscreen === 'true';
     const vCode = (versionCode as string) || '1';
     const vName = (versionName as string) || '1.0';
 
@@ -100,11 +96,9 @@ app.post('/api/build/stream', async (req, res) => {
         log('Installing dependencies...', 'command');
         await runCommand('npm', ['install'], projectDir, log);
 
-        // --- AUTO INJECT CSS ---
         if (!isFullscreen) {
             log('Injecting Safe-Area CSS to index.html...', 'info');
             const indexHtmlPath = path.join(projectDir, 'index.html');
-            
             if (fs.existsSync(indexHtmlPath)) {
                 let htmlContent = fs.readFileSync(indexHtmlPath, 'utf-8');
                 const safeAreaCSS = `
@@ -150,22 +144,18 @@ app.post('/api/build/stream', async (req, res) => {
         log('Adding Android platform...', 'command');
         await runCommand('npx', ['cap', 'add', 'android'], projectDir, log);
 
-        // --- CUSTOMIZATION AREA ---
         log('Applying custom settings...', 'info');
         const androidManifestPath = path.join(projectDir, 'android/app/src/main/AndroidManifest.xml');
         const stylesPath = path.join(projectDir, 'android/app/src/main/res/values/styles.xml');
         const buildGradlePath = path.join(projectDir, 'android/app/build.gradle');
 
-        // 1. VERSIONING
         await runCommand(`sed -i 's/versionCode 1/versionCode ${vCode}/g' ${buildGradlePath}`, [], projectDir);
         await runCommand(`sed -i 's/versionName "1.0"/versionName "${vName}"/g' ${buildGradlePath}`, [], projectDir);
 
-        // 2. ORIENTATION
         if (finalOrientation !== 'user') {
             await runCommand(`sed -i 's/<activity/<activity android:screenOrientation="${finalOrientation}"/g' ${androidManifestPath}`, [], projectDir, log);
         }
 
-        // 3. LAYOUT FIX
         if (isFullscreen) {
             log('Mode: Fullscreen (Immersive)', 'info');
             await runCommand(`sed -i 's|parent="AppTheme.NoActionBar"|parent="Theme.AppCompat.NoActionBar.FullScreen"|g' ${stylesPath}`, [], projectDir, log);
@@ -183,13 +173,15 @@ app.post('/api/build/stream', async (req, res) => {
             await runCommand(`sed -i 's|<\/style>|${styleFix}<\/style>|g' ${stylesPath}`, [], projectDir, log);
         }
 
-        // ✅ UPDATE 4: Handle Icon (URL vs Base64)
+        updateStatus('ANDROID_SYNC');
+        await runCommand('npx', ['cap', 'sync'], projectDir, log);
+
+        // ✅ FIX: PINDAHKAN LOGIKA ICON KESINI (SETELAH SYNC)
         if (iconUrl && typeof iconUrl === 'string') {
             const resDir = path.join(projectDir, 'android/app/src/main/res');
             const folders = ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi'];
             
             if (iconUrl.startsWith('http')) {
-                // Handle URL
                 log('Downloading custom icon from URL...', 'command');
                 for (const folder of folders) {
                     const target = path.join(resDir, folder, 'ic_launcher.png');
@@ -198,10 +190,8 @@ app.post('/api/build/stream', async (req, res) => {
                     await runCommand(`cp ${target} ${targetRound}`, [], projectDir);
                 }
             } else if (iconUrl.startsWith('data:image')) {
-                // Handle Base64 Upload
                 log('Processing uploaded icon...', 'command');
                 try {
-                    // Hapus header base64 (data:image/png;base64,...)
                     const base64Data = iconUrl.split(';base64,').pop();
                     if (base64Data) {
                         const iconBuffer = Buffer.from(base64Data, 'base64');
@@ -221,9 +211,6 @@ app.post('/api/build/stream', async (req, res) => {
                 }
             }
         }
-
-        updateStatus('ANDROID_SYNC');
-        await runCommand('npx', ['cap', 'sync'], projectDir, log);
 
         updateStatus('COMPILING_APK');
         log('Compiling APK with Gradle...', 'command');
