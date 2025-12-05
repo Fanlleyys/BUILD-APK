@@ -3,6 +3,8 @@ import { BuildForm } from './components/BuildForm';
 import { Terminal } from './components/Terminal';
 import LightRays from './components/LightRays';
 import BlurText from './components/BlurText';
+import { QuickChips, HowItWorks, TechSpecs } from './components/GuideSection';
+import TargetCursor from './components/TargetCursor';
 import { BuildStatus, LogEntry } from './types';
 import { Layers, Download, Zap, ShieldCheck, Cpu } from 'lucide-react';
 
@@ -112,6 +114,13 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#030305] text-zinc-100 selection:bg-brand-500/30 relative overflow-x-hidden font-sans">
       
+      {/* ✅ TARGET CURSOR (Paling Atas) */}
+      <TargetCursor 
+        spinDuration={4} 
+        hideDefaultCursor={true} 
+        parallaxOn={true} 
+      />
+
       {/* === BACKGROUND LIGHT RAYS === */}
       <div className="fixed inset-0 z-0 pointer-events-none">
          <LightRays
@@ -165,7 +174,6 @@ export default function App() {
             <span>Powered by CapacitorJS & Cloud Build Engine</span>
           </div>
           
-          {/* ✅ JUDUL DENGAN BLUR TEXT ANIMATION (FIXED) */}
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight drop-shadow-2xl flex flex-wrap justify-center gap-x-4 gap-y-2">
              <BlurText 
                 text="Web to APK" 
@@ -179,7 +187,7 @@ export default function App() {
                 delay={500}
                 animateBy="words" 
                 direction="top" 
-                // 👇 Pake warna solid + glow biar pasti muncul
+                // 👇 Warna Solid + Glow (Fix biar ga ilang)
                 className="text-indigo-400 drop-shadow-[0_0_15px_rgba(129,140,248,0.6)]"
              />
           </h1>
@@ -187,6 +195,8 @@ export default function App() {
           <p className="text-zinc-300 text-lg md:text-xl max-w-2xl mx-auto leading-relaxed">
             Transform your React, Vue, or Angular projects into production-ready Android applications in minutes. No Android Studio required.
           </p>
+
+          <QuickChips />
         </div>
 
         {/* === FORM WIZARD === */}
@@ -206,9 +216,10 @@ export default function App() {
                                 <p className="text-emerald-200/60">Your APK has been compiled, signed, and is ready for deployment.</p>
                             </div>
                         </div>
+                        {/* 👇 CLASS 'cursor-target' */}
                         <a 
                             href={apkUrl} 
-                            className="w-full md:w-auto px-8 py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-lg rounded-xl flex items-center justify-center gap-3 transition-all hover:scale-105 shadow-lg shadow-emerald-500/20"
+                            className="cursor-target w-full md:w-auto px-8 py-4 bg-emerald-500 hover:bg-emerald-400 text-black font-bold text-lg rounded-xl flex items-center justify-center gap-3 transition-all hover:scale-105 shadow-lg shadow-emerald-500/20"
                         >
                             <Download className="w-5 h-5" /> 
                             Download APK
@@ -219,6 +230,9 @@ export default function App() {
             </div>
         )}
 
+        <HowItWorks />
+        <TechSpecs />
+
       </main>
       
       <footer className="py-8 text-center text-zinc-600 text-sm relative z-10">
@@ -226,4 +240,4 @@ export default function App() {
       </footer>
     </div>
   );
-} 
+}

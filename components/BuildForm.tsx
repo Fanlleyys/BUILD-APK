@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Github, Play, Loader2, ArrowRight, Monitor, Smartphone, LayoutTemplate, Box, CheckCircle2 } from 'lucide-react';
 import { BuildStatus } from '../types';
 import Stepper, { Step } from './Stepper';
-import { BorderBeam } from './BorderBeam'; // ✅ Pastikan file BorderBeam.tsx sudah ada
+import { BorderBeam } from './BorderBeam';
 
 interface BuildFormProps {
   onBuild: (data: any) => void;
@@ -10,7 +10,6 @@ interface BuildFormProps {
   apkUrl?: string;
 }
 
-// Helper function untuk generate ID
 const generatePackageId = (appName: string): string => {
   const slug = appName
     .toLowerCase()
@@ -22,7 +21,6 @@ const generatePackageId = (appName: string): string => {
 export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
   const [step, setStep] = useState(1); 
   
-  // Form State
   const [url, setUrl] = useState('');
   const [appName, setAppName] = useState('KataSensei');
   const [appId, setAppId] = useState('com.katasensei.app');
@@ -32,7 +30,6 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
   const [versionCode, setVersionCode] = useState('1');
   const [versionName, setVersionName] = useState('1.0.0');
 
-  // Auto-fill App ID saat App Name berubah
   useEffect(() => {
     if (step === 2) {
       setAppId(generatePackageId(appName)); 
@@ -67,11 +64,8 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
   return (
     <div className="w-full max-w-4xl mx-auto mb-10">
       
-      {/* Container Utama dengan Glassmorphism & Border Beam */}
-      {/* bg-zinc-900/40 biar agak transparan, jadi Light Rays di belakang kelihatan dikit */}
       <div className="bg-zinc-900/40 rounded-3xl border border-white/10 backdrop-blur-xl shadow-2xl shadow-brand-500/5 overflow-hidden relative group">
         
-        {/* ✅ EFEK BORDER BEAM (Garis Neon Keliling) */}
         <BorderBeam size={300} duration={12} delay={9} borderWidth={1.5} colorFrom="#818cf8" colorTo="#c084fc" />
 
         {/* === PROGRESS HEADER === */}
@@ -94,16 +88,14 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                     </div>
                 </div>
             ))}
-            {/* Garis penghubung background */}
             <div className="absolute left-10 right-10 top-11 h-0.5 bg-zinc-800 -z-0 hidden md:block"></div>
-            {/* Garis progress aktif */}
             <div 
                 className="absolute left-10 top-11 h-0.5 bg-brand-600 -z-0 transition-all duration-500 hidden md:block shadow-[0_0_10px_#6366f1]"
                 style={{ width: `${((step - 1) / 2) * 85}%` }} 
             ></div>
         </div>
 
-        {/* === CONTENT BODY (STEPPER) === */}
+        {/* === CONTENT BODY === */}
         <div className="p-6 md:p-10 min-h-[400px] relative z-10">
             <Stepper currentStep={step} className="transition-all duration-500">
                 
@@ -142,7 +134,8 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                             <button 
                                 onClick={handleNext}
                                 disabled={!url || !isGithubUrl}
-                                className="group relative px-8 py-4 bg-zinc-100 text-zinc-950 font-bold text-lg rounded-full hover:scale-105 transition-all disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed overflow-hidden"
+                                // 👇 CLASS 'cursor-target'
+                                className="cursor-target group relative px-8 py-4 bg-zinc-100 text-zinc-950 font-bold text-lg rounded-full hover:scale-105 transition-all disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed overflow-hidden"
                             >
                                 <span className="relative z-10 flex items-center gap-2">
                                     Check Repository <ArrowRight className="h-5 w-5 group-hover:translate-x-1 transition-transform" />
@@ -236,7 +229,6 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                 <Step>
                     <div className="space-y-8 text-center py-4">
                         <div className="max-w-md mx-auto bg-zinc-900/80 p-8 rounded-3xl border border-zinc-800 relative overflow-hidden group hover:border-brand-500/30 transition-colors">
-                            {/* Background glow effect */}
                             <div className="absolute top-0 right-0 w-40 h-40 bg-brand-500/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
                             
                             <div className="w-24 h-24 bg-zinc-800 mx-auto rounded-2xl mb-6 border border-zinc-700 overflow-hidden shadow-2xl relative z-10 group-hover:scale-105 transition-transform duration-500">
@@ -267,7 +259,8 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                             <button
                                 onClick={handleSubmit}
                                 disabled={isLoading}
-                                className={`w-full max-w-md flex items-center justify-center px-8 py-5 rounded-2xl text-xl font-bold text-white transition-all shadow-2xl relative overflow-hidden group
+                                // 👇 CLASS 'cursor-target'
+                                className={`cursor-target w-full max-w-md flex items-center justify-center px-8 py-5 rounded-2xl text-xl font-bold text-white transition-all shadow-2xl relative overflow-hidden group
                                     ${isLoading 
                                     ? 'bg-zinc-800 text-zinc-500 cursor-not-allowed' 
                                     : 'bg-gradient-to-r from-brand-600 via-indigo-600 to-brand-600 bg-[length:200%_auto] hover:bg-[position:right_center] hover:scale-[1.02] hover:shadow-brand-500/40 active:scale-95'}`}
@@ -278,7 +271,6 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                                     Building App...
                                     </>
                                 ) : (
-                                    // ✅ EFEK SHINY TEXT PADA TOMBOL
                                     <span className="flex items-center animate-shimmer bg-clip-text text-transparent bg-[linear-gradient(110deg,#ffffff,45%,#a5b4fc,55%,#ffffff)] bg-[length:200%_100%]">
                                         <Play className="-ml-1 mr-3 h-6 w-6 fill-white text-white" />
                                         Start Cloud Build
@@ -287,7 +279,8 @@ export const BuildForm: React.FC<BuildFormProps> = ({ onBuild, status }) => {
                             </button>
                             
                             {!isLoading && (
-                                <button onClick={handleBack} className="text-zinc-500 text-sm hover:text-zinc-300 transition-colors mt-2">
+                                // 👇 CLASS 'cursor-target'
+                                <button onClick={handleBack} className="cursor-target text-zinc-500 text-sm hover:text-zinc-300 transition-colors mt-2">
                                     Back to Configuration
                                 </button>
                             )}
