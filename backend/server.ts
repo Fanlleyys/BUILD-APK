@@ -12,8 +12,16 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 7860;
 
-app.use(cors({ origin: '*', methods: ['GET', 'POST'] }));
-app.use(express.json() as any);
+// ✅ UPDATE 1: Tambah limit body parser biar bisa terima gambar Base64 besar
+app.use(express.json({ limit: '50mb' }) as any);
+app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
+
+// ✅ UPDATE 2: CORS diizinkan untuk semua (bisa dispesifikkan kalau mau)
+app.use(cors({
+    origin: '*', 
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type']
+}));
 
 const WORKSPACE_DIR = path.join(__dirname, 'workspace');
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -21,7 +29,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(WORKSPACE_DIR)) fs.mkdirSync(WORKSPACE_DIR, { recursive: true, mode: 0o777 });
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true, mode: 0o777 });
 
-app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v3.3 (Auto-Inject CSS) is Running. 🚀'); });
+app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v4.0 (POST Support + Base64 Icon) is Running. 🚀'); });
 app.use('/download', express.static(PUBLIC_DIR) as any);
 
 const sendEvent = (res: any, data: any) => {
@@ -32,15 +40,26 @@ function runCommand(command: string, args: string[], cwd: string, logFn?: (msg: 
     return new Promise((resolve, reject) => {
         if (logFn) logFn(`${command} ${args.join(' ')}`, 'info');
         const child = spawn(command, args, { cwd, shell: true, env: { ...process.env, CI: 'true', TERM: 'dumb' } });
-        child.stdout.on('data', (data) => { const lines = data.toString().split('\n'); lines.forEach((line: string) => { if (line.trim() && logFn) logFn(line.trim(), 'info'); }); });
-        child.stderr.on('data', (data) => { const lines = data.toString().split('\n'); lines.forEach((line: string) => { if (line.trim() && logFn) logFn(line.trim(), 'info'); }); });
+        
+        child.stdout.on('data', (data) => { 
+            const lines = data.toString().split('\n'); 
+            lines.forEach((line: string) => { if (line.trim() && logFn) logFn(line.trim(), 'info'); }); 
+        });
+        
+        child.stderr.on('data', (data) => { 
+            const lines = data.toString().split('\n'); 
+            lines.forEach((line: string) => { if (line.trim() && logFn) logFn(line.trim(), 'info'); }); 
+        });
+        
         child.on('close', (code) => { if (code === 0) resolve(); else reject(new Error(`Command "${command}" failed with exit code ${code}`)); });
         child.on('error', (err) => reject(err));
     });
 }
 
-app.get('/api/build/stream', async (req, res) => {
-    const { repoUrl, appName, appId, orientation, iconUrl, fullscreen, versionCode, versionName } = req.query;
+// ✅ UPDATE 3: Ganti GET jadi POST
+app.post('/api/build/stream', async (req, res) => {
+    // ✅ Ambil data dari req.body (bukan req.query)
+    const { repoUrl, appName, appId, orientation, iconUrl, fullscreen, versionCode, versionName } = req.body;
 
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -55,7 +74,7 @@ app.get('/api/build/stream', async (req, res) => {
     const finalAppName = (appName as string) || 'My App';
     const finalAppId = (appId as string) || 'com.appbuilder.generated';
     const finalOrientation = (orientation as string) || 'portrait';
-    const isFullscreen = fullscreen === 'true';
+    const isFullscreen = fullscreen === true || fullscreen === 'true'; // Handle boolean/string
     const vCode = (versionCode as string) || '1';
     const vName = (versionName as string) || '1.0';
 
@@ -81,15 +100,13 @@ app.get('/api/build/stream', async (req, res) => {
         log('Installing dependencies...', 'command');
         await runCommand('npm', ['install'], projectDir, log);
 
-        // --- FITUR BARU: AUTO INJECT CSS ---
+        // --- AUTO INJECT CSS ---
         if (!isFullscreen) {
             log('Injecting Safe-Area CSS to index.html...', 'info');
             const indexHtmlPath = path.join(projectDir, 'index.html');
             
             if (fs.existsSync(indexHtmlPath)) {
                 let htmlContent = fs.readFileSync(indexHtmlPath, 'utf-8');
-                
-                // CSS Sakti buat nurunin konten
                 const safeAreaCSS = `
                 <style>
                     body {
@@ -100,20 +117,13 @@ app.get('/api/build/stream', async (req, res) => {
                     }
                 </style>
                 `;
-                
-                // Masukin sebelum </head>
                 if (htmlContent.includes('</head>')) {
                     htmlContent = htmlContent.replace('</head>', `${safeAreaCSS}</head>`);
                     fs.writeFileSync(indexHtmlPath, htmlContent);
                     log('CSS Injected Successfully!', 'success');
-                } else {
-                    log('Warning: Could not find </head> tag to inject CSS.', 'error');
                 }
-            } else {
-                log('Warning: index.html not found in root. Skipping CSS injection.', 'info');
             }
         }
-        // -----------------------------------
 
         log('Injecting Capacitor...', 'command');
         await runCommand('npm', ['install', '@capacitor/core', '@capacitor/cli', '@capacitor/android', '--save-dev'], projectDir, log);
@@ -173,16 +183,42 @@ app.get('/api/build/stream', async (req, res) => {
             await runCommand(`sed -i 's|<\/style>|${styleFix}<\/style>|g' ${stylesPath}`, [], projectDir, log);
         }
 
-        // 4. CUSTOM ICON
-        if (iconUrl && typeof iconUrl === 'string' && iconUrl.startsWith('http')) {
-            log('Downloading custom icon...', 'command');
+        // ✅ UPDATE 4: Handle Icon (URL vs Base64)
+        if (iconUrl && typeof iconUrl === 'string') {
             const resDir = path.join(projectDir, 'android/app/src/main/res');
             const folders = ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi'];
-            for (const folder of folders) {
-                const target = path.join(resDir, folder, 'ic_launcher.png');
-                const targetRound = path.join(resDir, folder, 'ic_launcher_round.png');
-                await runCommand(`curl -L "${iconUrl}" -o ${target}`, [], projectDir);
-                await runCommand(`cp ${target} ${targetRound}`, [], projectDir);
+            
+            if (iconUrl.startsWith('http')) {
+                // Handle URL
+                log('Downloading custom icon from URL...', 'command');
+                for (const folder of folders) {
+                    const target = path.join(resDir, folder, 'ic_launcher.png');
+                    const targetRound = path.join(resDir, folder, 'ic_launcher_round.png');
+                    await runCommand(`curl -L "${iconUrl}" -o ${target}`, [], projectDir);
+                    await runCommand(`cp ${target} ${targetRound}`, [], projectDir);
+                }
+            } else if (iconUrl.startsWith('data:image')) {
+                // Handle Base64 Upload
+                log('Processing uploaded icon...', 'command');
+                try {
+                    // Hapus header base64 (data:image/png;base64,...)
+                    const base64Data = iconUrl.split(';base64,').pop();
+                    if (base64Data) {
+                        const iconBuffer = Buffer.from(base64Data, 'base64');
+                        const tempIconPath = path.join(projectDir, 'temp_icon.png');
+                        fs.writeFileSync(tempIconPath, iconBuffer);
+
+                        for (const folder of folders) {
+                            const target = path.join(resDir, folder, 'ic_launcher.png');
+                            const targetRound = path.join(resDir, folder, 'ic_launcher_round.png');
+                            fs.copyFileSync(tempIconPath, target);
+                            fs.copyFileSync(tempIconPath, targetRound);
+                        }
+                        log('Custom icon applied successfully!', 'success');
+                    }
+                } catch (err) {
+                    log('Failed to process custom icon. Using default.', 'error');
+                }
             }
         }
 
