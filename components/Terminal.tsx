@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { Terminal as TerminalIcon, X, Minus, Square, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { Terminal as TerminalIcon, X, Minus, Square, CheckCircle2, AlertCircle, Loader2, Copy, Check } from 'lucide-react';
 import { BuildStatus, LogEntry } from '../types';
 
 interface TerminalProps {
@@ -24,7 +24,26 @@ const getProgress = (status: BuildStatus) => {
 
 export const Terminal: React.FC<TerminalProps> = ({ logs, status }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [copied, setCopied] = useState(false); // State buat feedback copy
   const progress = getProgress(status);
+
+  // ✅ Fungsi Copy Log
+  const handleCopyLogs = async () => {
+    if (logs.length === 0) return;
+
+    // Gabungin semua log jadi satu string rapi
+    const logText = logs.map(l => `[${l.timestamp}] ${l.message}`).join('\n');
+
+    try {
+      await navigator.clipboard.writeText(logText);
+      setCopied(true);
+      
+      // Balikin tombol jadi normal setelah 2 detik
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy logs', err);
+    }
+  };
 
   return (
     <div className="w-full max-w-4xl mx-auto mt-8 animate-in slide-in-from-bottom-10 duration-700">
@@ -55,24 +74,54 @@ export const Terminal: React.FC<TerminalProps> = ({ logs, status }) => {
         
         {/* Terminal Header */}
         <div className="bg-zinc-900/80 border-b border-white/5 px-4 py-2 flex items-center justify-between select-none">
+            {/* Kiri: Window Controls Decoration */}
             <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-red-500/80 hover:bg-red-500 transition-colors shadow-[0_0_8px_rgba(239,68,68,0.4)]" />
                 <div className="w-3 h-3 rounded-full bg-yellow-500/80 hover:bg-yellow-500 transition-colors shadow-[0_0_8px_rgba(234,179,8,0.4)]" />
                 <div className="w-3 h-3 rounded-full bg-green-500/80 hover:bg-green-500 transition-colors shadow-[0_0_8px_rgba(34,197,94,0.4)]" />
             </div>
-            <div className="flex items-center gap-2 text-zinc-500 text-xs">
+
+            {/* Tengah: Title */}
+            <div className="flex items-center gap-2 text-zinc-500 text-xs absolute left-1/2 -translate-x-1/2">
                 <TerminalIcon className="w-3 h-3" />
                 <span>build_server.exe — ssh root@builder-ai</span>
             </div>
-            <div className="flex gap-3 text-zinc-600">
-                <Minus className="w-3 h-3 cursor-pointer hover:text-white" />
-                <Square className="w-3 h-3 cursor-pointer hover:text-white" />
-                <X className="w-3 h-3 cursor-pointer hover:text-white" />
+
+            {/* Kanan: Copy Button & Controls */}
+            <div className="flex items-center gap-4">
+                {/* ✅ TOMBOL COPY LOG */}
+                <button 
+                    onClick={handleCopyLogs}
+                    disabled={logs.length === 0}
+                    className="flex items-center gap-1.5 text-[10px] font-medium text-zinc-500 hover:text-zinc-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Copy all logs to clipboard"
+                >
+                    {copied ? (
+                        <>
+                            <Check className="w-3 h-3 text-emerald-500" />
+                            <span className="text-emerald-500">Copied</span>
+                        </>
+                    ) : (
+                        <>
+                            <Copy className="w-3 h-3" />
+                            <span>Copy Log</span>
+                        </>
+                    )}
+                </button>
+
+                {/* Divider Kecil */}
+                <div className="w-px h-3 bg-zinc-700/50"></div>
+
+                {/* Fake Window Controls */}
+                <div className="flex gap-3 text-zinc-600">
+                    <Minus className="w-3 h-3 cursor-pointer hover:text-white" />
+                    <Square className="w-3 h-3 cursor-pointer hover:text-white" />
+                    <X className="w-3 h-3 cursor-pointer hover:text-white" />
+                </div>
             </div>
         </div>
 
         {/* Terminal Body */}
-        {/* 👇 Scrollbar Styling ada di sini (Tailwind Arbitrary Values) */}
         <div className="p-4 h-[400px] overflow-y-auto space-y-1 
             scrollbar-thin 
             [&::-webkit-scrollbar]:w-1.5 
