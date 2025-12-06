@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 7860;
 
+// Limit gede biar bisa upload icon base64
 app.use(express.json({ limit: '50mb' }) as any);
 app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
 
@@ -27,7 +28,7 @@ const PUBLIC_DIR = path.join(__dirname, 'public');
 if (!fs.existsSync(WORKSPACE_DIR)) fs.mkdirSync(WORKSPACE_DIR, { recursive: true, mode: 0o777 });
 if (!fs.existsSync(PUBLIC_DIR)) fs.mkdirSync(PUBLIC_DIR, { recursive: true, mode: 0o777 });
 
-app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v5.0 (Safe Area Fix) is Running. 🚀'); });
+app.get('/', (req, res) => { res.status(200).send('AppBuilder-AI v5.0 (Ultimate Edition) is Running. 🚀'); });
 app.use('/download', express.static(PUBLIC_DIR) as any);
 
 const sendEvent = (res: any, data: any) => {
@@ -92,53 +93,69 @@ app.post('/api/build/stream', async (req, res) => {
         log(`Cloning ${repoUrl}...`, 'command');
         await runCommand('git', ['clone', repoUrl, '.'], projectDir, log);
         
-        updateStatus('INSTALLING');
-        log('Installing dependencies...', 'command');
-        await runCommand('npm', ['install'], projectDir, log);
+        // --- LOGIKA BARU: DETEKSI STATIC HTML VS NODE.JS ---
+        const pkgPath = path.join(projectDir, 'package.json');
+        const hasPackageJson = fs.existsSync(pkgPath);
+        let webDir = '.'; // Default root
 
-        // ✅ UPDATE: LOGIKA INJECT CSS & META TAG YANG LEBIH PINTAR
+        if (hasPackageJson) {
+            log('✅ Detected package.json. Using Node.js Build Mode.', 'success');
+            updateStatus('INSTALLING');
+            log('Installing dependencies...', 'command');
+            await runCommand('npm', ['install'], projectDir, log);
+
+            updateStatus('BUILDING_WEB');
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
+            if (pkg.scripts && pkg.scripts.build) {
+                 log('Running build script...', 'command');
+                 await runCommand('npm', ['run', 'build'], projectDir, log);
+                 
+                 // Auto-detect output folder
+                 if (fs.existsSync(path.join(projectDir, 'dist'))) webDir = 'dist';
+                 else if (fs.existsSync(path.join(projectDir, 'build'))) webDir = 'build';
+                 else if (fs.existsSync(path.join(projectDir, 'out'))) webDir = 'out';
+            } else {
+                log('No build script found. Using root directory.', 'info');
+            }
+        } else {
+            log('⚠️ No package.json found. Switching to Static HTML Mode.', 'success');
+            log('Skipping npm install & build. Using raw files.', 'info');
+            
+            // Bikin package.json dummy biar Capacitor gak error
+            await runCommand('npm', ['init', '-y'], projectDir, log);
+            
+            if (fs.existsSync(path.join(projectDir, 'public'))) {
+                webDir = 'public';
+                log('Found public folder, using it as webDir.', 'info');
+            }
+        }
+
+        // --- INJECT SAFE AREA CSS (BIAR GAK NABRAK PONI) ---
         if (!isFullscreen) {
             log('Injecting Safe-Area Logic (Meta + CSS)...', 'info');
-            const indexHtmlPath = path.join(projectDir, 'index.html');
+            const indexHtmlPath = path.join(projectDir, webDir, 'index.html'); // Cari di webDir yang bener
             
             if (fs.existsSync(indexHtmlPath)) {
                 let htmlContent = fs.readFileSync(indexHtmlPath, 'utf-8');
                 
-                // 1. Inject viewport-fit=cover (WAJIB BIAR env() JALAN)
+                // 1. Inject viewport-fit=cover
                 if (htmlContent.includes('<meta name="viewport"')) {
-                    // Kalau udah ada meta viewport, tambahin viewport-fit=cover
-                    htmlContent = htmlContent.replace(
-                        '<meta name="viewport" content="',
-                        '<meta name="viewport" content="viewport-fit=cover, '
-                    );
+                    htmlContent = htmlContent.replace('<meta name="viewport" content="', '<meta name="viewport" content="viewport-fit=cover, ');
                 } else {
-                    // Kalau belum ada, bikin baru
-                    htmlContent = htmlContent.replace(
-                        '<head>',
-                        '<head><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">'
-                    );
+                    htmlContent = htmlContent.replace('<head>', '<head><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">');
                 }
 
-                // 2. Inject CSS yang lebih maksa
-                // Kita kasih padding ke body DAN #root/#app (biasanya dipake React/Vue)
+                // 2. Inject CSS Padding
                 const safeAreaCSS = `
                 <style>
-                    :root {
-                        --sat: env(safe-area-inset-top, 35px); /* Fallback 35px kalau env gagal */
-                    }
+                    :root { --sat: env(safe-area-inset-top, 35px); }
                     body {
                         padding-top: var(--sat) !important;
-                        background-color: #000000; /* Biar status bar kelihatan nyatu */
-                    }
-                    /* Fix buat React/Vue yang mount di div root */
-                    #root, #app, #__next {
-                        padding-top: 0px !important; /* Hindari double padding */
+                        background-color: #000000; /* Background hitam biar nyatu sama status bar */
                         min-height: 100vh;
+                        box-sizing: border-box;
                     }
-                    /* Fix buat Fixed Header biar turun */
-                    header, nav, .fixed-top {
-                        margin-top: var(--sat) !important;
-                    }
+                    #root, #app, #__next { padding-top: 0px !important; }
                 </style>
                 `;
                 
@@ -153,47 +170,35 @@ app.post('/api/build/stream', async (req, res) => {
         log('Injecting Capacitor...', 'command');
         await runCommand('npm', ['install', '@capacitor/core', '@capacitor/cli', '@capacitor/android', '--save-dev'], projectDir, log);
 
-        updateStatus('BUILDING_WEB');
-        log('Building web assets...', 'command');
-        const pkgPath = path.join(projectDir, 'package.json');
-        if (fs.existsSync(pkgPath)) {
-            const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-            if (pkg.scripts && pkg.scripts.build) {
-                 await runCommand('npm', ['run', 'build'], projectDir, log);
-            } else {
-                log('No build script found, skipping web build.', 'info');
-            }
-        }
-
         updateStatus('CAPACITOR_INIT');
-        log('Initializing Capacitor...', 'command');
-        let webDir = 'dist'; 
-        if (fs.existsSync(path.join(projectDir, 'build'))) webDir = 'build'; 
-        
+        log(`Initializing Capacitor (WebDir: ${webDir})...`, 'command');
         await runCommand('npx', ['cap', 'init', `"${finalAppName}"`, finalAppId, '--web-dir', webDir], projectDir, log);
 
         log('Adding Android platform...', 'command');
         await runCommand('npx', ['cap', 'add', 'android'], projectDir, log);
 
+        // --- CUSTOMIZATION (XML EDIT) ---
         log('Applying custom settings...', 'info');
         const androidManifestPath = path.join(projectDir, 'android/app/src/main/AndroidManifest.xml');
         const stylesPath = path.join(projectDir, 'android/app/src/main/res/values/styles.xml');
         const buildGradlePath = path.join(projectDir, 'android/app/build.gradle');
 
+        // Versioning
         await runCommand(`sed -i 's/versionCode 1/versionCode ${vCode}/g' ${buildGradlePath}`, [], projectDir);
         await runCommand(`sed -i 's/versionName "1.0"/versionName "${vName}"/g' ${buildGradlePath}`, [], projectDir);
 
+        // Orientation
         if (finalOrientation !== 'user') {
             await runCommand(`sed -i 's/<activity/<activity android:screenOrientation="${finalOrientation}"/g' ${androidManifestPath}`, [], projectDir, log);
         }
 
+        // Layout (Fullscreen vs Safe Area)
         if (isFullscreen) {
             log('Mode: Fullscreen (Immersive)', 'info');
             await runCommand(`sed -i 's|parent="AppTheme.NoActionBar"|parent="Theme.AppCompat.NoActionBar.FullScreen"|g' ${stylesPath}`, [], projectDir, log);
             await runCommand(`sed -i 's|<\/style>|<item name="android:windowFullscreen">true<\/item><\/style>|g' ${stylesPath}`, [], projectDir, log);
         } else {
             log('Mode: Safe Area (Solid Status Bar)', 'info');
-            // Kita paksa status bar hitam pekat biar kelihatan batasnya
             const styleFix = [
                 '<item name="android:windowFullscreen">false</item>',
                 '<item name="android:windowTranslucentStatus">false</item>',
@@ -208,11 +213,12 @@ app.post('/api/build/stream', async (req, res) => {
         updateStatus('ANDROID_SYNC');
         await runCommand('npx', ['cap', 'sync'], projectDir, log);
 
-        // Handle Icon (Hapus XML Adaptive + Copy PNG)
+        // --- ICON HANDLING (URL & BASE64) ---
         if (iconUrl && typeof iconUrl === 'string') {
             const resDir = path.join(projectDir, 'android/app/src/main/res');
             const folders = ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi'];
             
+            // Hapus Adaptive Icon bawaan Android (PENTING BIAR ICON GAK KETIMPA)
             const adaptiveIconDir = path.join(resDir, 'mipmap-anydpi-v26');
             if (fs.existsSync(adaptiveIconDir)) {
                 fs.rmSync(adaptiveIconDir, { recursive: true, force: true });
@@ -228,7 +234,7 @@ app.post('/api/build/stream', async (req, res) => {
                     await runCommand(`cp ${target} ${targetRound}`, [], projectDir);
                 }
             } else if (iconUrl.startsWith('data:image')) {
-                log('Processing uploaded icon...', 'command');
+                log('Processing uploaded icon (Base64)...', 'command');
                 try {
                     const base64Data = iconUrl.split(';base64,').pop();
                     if (base64Data) {
