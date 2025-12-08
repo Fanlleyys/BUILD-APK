@@ -15,13 +15,11 @@ const PORT = process.env.PORT || 7860;
 app.use(express.json({ limit: '50mb' }) as any);
 app.use(express.urlencoded({ limit: '50mb', extended: true }) as any);
 
-app.use(
-  cors({
-    origin: '*',
-    methods: ['GET', 'POST'],
-    allowedHeaders: ['Content-Type'],
-  })
-);
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST'],
+  allowedHeaders: ['Content-Type'],
+}));
 
 const WORKSPACE_DIR = path.join(__dirname, 'workspace');
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -34,9 +32,7 @@ if (!fs.existsSync(PUBLIC_DIR)) {
 }
 
 app.get('/', (req, res) => {
-  res
-    .status(200)
-    .send('AppBuilder-AI v5.0 (Node + Static + Safe Area) is Running. 🚀');
+  res.status(200).send('AppBuilder-AI v5.1 (Static + Nested Frontend Fix) is Running. 🚀');
 });
 app.use('/download', express.static(PUBLIC_DIR) as any);
 
@@ -44,16 +40,15 @@ const sendEvent = (res: any, data: any) => {
   res.write(`data: ${JSON.stringify(data)}\n\n`);
 };
 
-type LogType = 'info' | 'command' | 'error' | 'success';
-
 function runCommand(
   command: string,
   args: string[],
   cwd: string,
-  logFn?: (msg: string, type: LogType) => void
+  logFn?: (msg: string, type: 'info' | 'error') => void,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     if (logFn) logFn(`${command} ${args.join(' ')}`, 'info');
+
     const child = spawn(command, args, {
       cwd,
       shell: true,
@@ -78,237 +73,78 @@ function runCommand(
       if (code === 0) resolve();
       else reject(new Error(`Command "${command}" failed with exit code ${code}`));
     });
+
     child.on('error', (err) => reject(err));
   });
 }
 
-// --- URL NORMALIZATION (hapus /tree/main, /blob/... dan tambahin .git) ---
-const normalizeGitHubUrl = (url: string): string => {
-  let clean = url.trim();
+// Helper: copy folder rekursif
+function copyRecursiveSync(src: string, dest: string) {
+  if (!fs.existsSync(src)) return;
+  if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
 
-  clean = clean
-    .replace('git@github.com:', 'https://github.com/')
-    .replace('www.github.com', 'github.com');
+  const entries = fs.readdirSync(src, { withFileTypes: true });
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
 
-  clean = clean.split('?')[0].split('#')[0];
-
-  const treeIdx = clean.indexOf('/tree/');
-  const blobIdx = clean.indexOf('/blob/');
-  const idxList = [treeIdx, blobIdx].filter((i) => i !== -1);
-  if (idxList.length > 0) {
-    const cutAt = Math.min(...idxList);
-    clean = clean.slice(0, cutAt);
-  }
-
-  if (!clean.endsWith('.git')) {
-    clean += '.git';
-  }
-
-  return clean;
-};
-
-// --- PINDAH STATIC ASSETS KE /web TANPA MINDahin package.json ---
-const moveStaticAssetsToWeb = (
-  projectDir: string,
-  log: (m: string, t: LogType) => void
-) => {
-  const webDir = path.join(projectDir, 'web');
-  if (!fs.existsSync(webDir)) {
-    fs.mkdirSync(webDir, { recursive: true });
-  }
-
-  const exts = [
-    '.html',
-    '.htm',
-    '.css',
-    '.js',
-    '.mjs',
-    '.cjs',
-    '.png',
-    '.jpg',
-    '.jpeg',
-    '.gif',
-    '.svg',
-    '.webp',
-    '.ico',
-  ];
-
-  const skipDirs = new Set([
-    'web',
-    'android',
-    'node_modules',
-    '.git',
-    '.github',
-    '.vscode',
-  ]);
-
-  const skipFiles = new Set([
-    'package.json',
-    'package-lock.json',
-    'pnpm-lock.yaml',
-    'yarn.lock',
-  ]);
-
-  const walk = (dir: string, relativeBase = '') => {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      const relPath = path.join(relativeBase, entry.name);
-
-      // Jangan sentuh /web
-      if (dir === webDir) continue;
-
-      if (entry.isDirectory()) {
-        if (skipDirs.has(entry.name)) continue;
-        walk(fullPath, relPath);
-      } else {
-        if (skipFiles.has(entry.name)) continue;
-
-        const ext = path.extname(entry.name).toLowerCase();
-        if (exts.includes(ext)) {
-          const targetPath = path.join(webDir, relPath);
-          const targetDir = path.dirname(targetPath);
-          if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
-          }
-          fs.renameSync(fullPath, targetPath);
-        }
-      }
+    if (entry.isDirectory()) {
+      copyRecursiveSync(srcPath, destPath);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(srcPath, destPath);
     }
-  };
-
-  walk(projectDir);
-  log('Static HTML assets moved into /web', 'info');
-};
-
-// --- PASTIKAN ADA web/index.html (rename / redirect) ---
-const ensureWebIndexHtml = (
-  projectDir: string,
-  log: (m: string, t: LogType) => void
-) => {
-  const webDir = path.join(projectDir, 'web');
-  const indexPath = path.join(webDir, 'index.html');
-
-  if (fs.existsSync(indexPath)) {
-    log('index.html already exists in web/, skipping ensure step.', 'info');
-    return;
   }
+}
 
-  if (!fs.existsSync(webDir)) {
-    log('web/ directory does not exist, cannot ensure index.html.', 'error');
-    return;
-  }
-
-  // Cari semua .html di bawah web/
-  const htmlFiles: string[] = [];
-
-  const walk = (dir: string, base = '') => {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const full = path.join(dir, entry.name);
-      const rel = path.join(base, entry.name);
-      if (entry.isDirectory()) {
-        walk(full, rel);
-      } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.html')) {
-        htmlFiles.push(rel);
-      }
+// Helper: deteksi output build (dist/build/out/docs)
+function detectBuildOutputDir(baseDir: string): string | null {
+  const candidates = ['dist', 'build', 'out', 'docs'];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(baseDir, dir, 'index.html'))) {
+      return dir;
     }
-  };
+  }
+  return null;
+}
 
-  walk(webDir);
-
-  if (htmlFiles.length === 0) {
-    log('No HTML files found in web/. Cannot create index.html.', 'error');
-    return;
+// Helper: pindahkan file static sederhana ke web/
+function prepareStaticWebFromRoot(projectDir: string, webDirAbs: string) {
+  if (!fs.existsSync(webDirAbs)) {
+    fs.mkdirSync(webDirAbs, { recursive: true });
   }
 
-  // Prioritas: file di root web/ (relPath tanpa slash)
-  const rootHtml = htmlFiles.find((rel) => !rel.includes(path.sep));
-  if (rootHtml) {
-    const srcPath = path.join(webDir, rootHtml);
-    fs.renameSync(srcPath, indexPath);
-    log(`Renamed ${rootHtml} to index.html in web/`, 'info');
-    return;
+  const entries = fs.readdirSync(projectDir, { withFileTypes: true });
+  for (const entry of entries) {
+    const name = entry.name;
+    if (['web', 'android', 'node_modules', '.git'].includes(name)) continue;
+
+    const srcPath = path.join(projectDir, name);
+    const destPath = path.join(webDirAbs, name);
+
+    if (entry.isDirectory()) {
+      copyRecursiveSync(srcPath, destPath);
+    } else if (entry.isFile()) {
+      fs.copyFileSync(srcPath, destPath);
+    }
   }
 
-  // Kalau semua di subfolder → bikin index.html yang auto redirect
-  const target = htmlFiles[0].replace(/\\/g, '/'); // path relatif untuk href
-  const redirectHtml = `<!doctype html>
+  const indexHtml = path.join(webDirAbs, 'index.html');
+  if (!fs.existsSync(indexHtml)) {
+    const fallbackHtml = `
+<!DOCTYPE html>
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Redirecting...</title>
-    <meta http-equiv="refresh" content="0; url=./${target}" />
-    <script>window.location.href = './${target}';</script>
+    <title>Static App</title>
   </head>
   <body>
-    <p>Loading...</p>
+    <h1>Static App</h1>
+    <p>No index.html found, this is a fallback placeholder.</p>
   </body>
-</html>
-`;
-  fs.writeFileSync(indexPath, redirectHtml);
-  log(`Created index.html redirecting to ./${target}`, 'info');
-};
-
-// --- INJECT SAFE AREA CSS KE index.html DI webDir ---
-const injectSafeAreaMetaAndCss = (
-  projectDir: string,
-  webDir: string,
-  isFullscreen: boolean,
-  log: (m: string, t: LogType) => void
-) => {
-  if (isFullscreen) return;
-
-  log('Injecting Safe-Area Logic (Meta + CSS)...', 'info');
-
-  const indexHtmlPath = path.join(projectDir, webDir, 'index.html');
-  if (!fs.existsSync(indexHtmlPath)) {
-    log(`index.html not found in ${webDir}, skipping safe-area injection.`, 'error');
-    return;
+</html>`;
+    fs.writeFileSync(indexHtml, fallbackHtml);
   }
-
-  let htmlContent = fs.readFileSync(indexHtmlPath, 'utf-8');
-
-  if (htmlContent.includes('<meta name="viewport"')) {
-    htmlContent = htmlContent.replace(
-      '<meta name="viewport" content="',
-      '<meta name="viewport" content="viewport-fit=cover, '
-    );
-  } else if (htmlContent.includes('<head>')) {
-    htmlContent = htmlContent.replace(
-      '<head>',
-      '<head><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">'
-    );
-  }
-
-  const safeAreaCSS = `
-  <style>
-    :root {
-      --sat: env(safe-area-inset-top, 35px);
-    }
-    body {
-      padding-top: var(--sat) !important;
-      background-color: #000000;
-      min-height: 100vh;
-      box-sizing: border-box;
-    }
-    #root, #app, #__next {
-      padding-top: 0px !important;
-      min-height: 100vh;
-    }
-    header, nav, .fixed-top {
-      margin-top: var(--sat) !important;
-    }
-  </style>
-  `;
-
-  if (htmlContent.includes('</head>')) {
-    htmlContent = htmlContent.replace('</head>', `${safeAreaCSS}</head>`);
-  }
-
-  fs.writeFileSync(indexHtmlPath, htmlContent);
-  log('Safe-Area Logic Injected Successfully!', 'success');
-};
+}
 
 app.post('/api/build/stream', async (req, res) => {
   const {
@@ -342,7 +178,10 @@ app.post('/api/build/stream', async (req, res) => {
   const buildId = uuidv4();
   const projectDir = path.join(WORKSPACE_DIR, buildId);
 
-  const log = (message: string, type: LogType = 'info') => {
+  const log = (
+    message: string,
+    type: 'info' | 'command' | 'error' | 'success' = 'info',
+  ) => {
     sendEvent(res, {
       type: 'log',
       log: {
@@ -353,6 +192,7 @@ app.post('/api/build/stream', async (req, res) => {
       },
     });
   };
+
   const updateStatus = (status: string) => {
     sendEvent(res, { type: 'status', status });
   };
@@ -366,94 +206,172 @@ app.post('/api/build/stream', async (req, res) => {
     log(`Config: ${finalAppName} | Fullscreen: ${isFullscreen}`, 'info');
 
     updateStatus('CLONING');
-    const normalizedRepoUrl = normalizeGitHubUrl(repoUrl);
-    log(`Cloning ${normalizedRepoUrl}...`, 'command');
-    await runCommand('git', ['clone', normalizedRepoUrl, '.'], projectDir, log);
+    log(`Cloning ${repoUrl}...`, 'command');
+    await runCommand('git', ['clone', repoUrl, '.'], projectDir, log);
 
-    const pkgPath = path.join(projectDir, 'package.json');
-    const hasPackageJson = fs.existsSync(pkgPath);
+    // FINAL TARGET untuk Capacitor SELALU "web"
+    const webDirRel = 'web';
+    const webDirAbs = path.join(projectDir, webDirRel);
+    if (!fs.existsSync(webDirAbs)) {
+      fs.mkdirSync(webDirAbs, { recursive: true });
+    }
 
-    let webDir = 'dist';
+    // Deteksi package.json di root atau subfolder
+    const rootPkgPath = path.join(projectDir, 'package.json');
+    const hasRootPkg = fs.existsSync(rootPkgPath);
 
-    if (hasPackageJson) {
-      // MODE NODE.JS / MODERN
-      log('✅ Detected package.json. Using Node.js Build Mode.', 'success');
+    const candidateSubApps = ['frontend', 'client', 'web', 'app'];
+    let nestedAppRel: string | null = null;
+    for (const sub of candidateSubApps) {
+      const subPkg = path.join(projectDir, sub, 'package.json');
+      if (fs.existsSync(subPkg)) {
+        nestedAppRel = sub;
+        break;
+      }
+    }
+
+    if (hasRootPkg) {
+      // MODE 1: Node.js app di root (contoh: bunpou)
+      log('✅ Detected package.json at project root. Using Node.js Build Mode.', 'success');
 
       updateStatus('INSTALLING');
-      log('Installing dependencies...', 'command');
+      log('Installing dependencies (root)...', 'command');
       await runCommand('npm', ['install'], projectDir, log);
 
       updateStatus('BUILDING_WEB');
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-
+      const pkg = JSON.parse(fs.readFileSync(rootPkgPath, 'utf-8'));
       if (pkg.scripts && pkg.scripts.build) {
-        log('Running build script...', 'command');
+        log('Running build script (root)...', 'command');
         await runCommand('npm', ['run', 'build'], projectDir, log);
 
-        const distDir = path.join(projectDir, 'dist');
-        const buildDir = path.join(projectDir, 'build');
-        const outDir = path.join(projectDir, 'out');
-        const docsDir = path.join(projectDir, 'docs');
-
-        if (fs.existsSync(distDir)) {
-          webDir = 'dist';
-        } else if (fs.existsSync(buildDir)) {
-          webDir = 'build';
-        } else if (fs.existsSync(outDir)) {
-          webDir = 'out';
-        } else if (fs.existsSync(docsDir)) {
-          webDir = 'docs';
-          log('Detected docs/ as build output (Vite GitHub Pages).', 'info');
+        const outDirName = detectBuildOutputDir(projectDir);
+        if (outDirName) {
+          const outDirAbs = path.join(projectDir, outDirName);
+          log(`Copying build output from ./${outDirName} to ./web ...`, 'info');
+          copyRecursiveSync(outDirAbs, webDirAbs);
         } else {
-          log(
-            'Build output folder not found (dist/build/out/docs).',
-            'error'
-          );
-          throw new Error(
-            'Build succeeded, but no supported output folder (dist/build/out/docs) was found.'
-          );
+          log('Build output folder not found, fallback copy from project root to ./web.', 'info');
+          prepareStaticWebFromRoot(projectDir, webDirAbs);
         }
       } else {
-        log('No "build" script found in package.json.', 'error');
-        throw new Error(
-          'This project has no "build" script; cannot generate APK.'
+        log('No build script found at root. Treating root as static site.', 'info');
+        prepareStaticWebFromRoot(projectDir, webDirAbs);
+      }
+    } else if (nestedAppRel) {
+      // MODE 2: Nested frontend (contoh: python backend + frontend React di ./frontend)
+      const nestedAppAbs = path.join(projectDir, nestedAppRel);
+      const nestedPkgPath = path.join(nestedAppAbs, 'package.json');
+
+      log(`✅ Detected nested frontend at "./${nestedAppRel}". Using Nested Node.js Build Mode.`, 'success');
+
+      updateStatus('INSTALLING');
+      log(`Installing dependencies in ./${nestedAppRel} ...`, 'command');
+      await runCommand('npm', ['install'], nestedAppAbs, log);
+
+      updateStatus('BUILDING_WEB');
+      const nestedPkg = JSON.parse(fs.readFileSync(nestedPkgPath, 'utf-8'));
+      if (nestedPkg.scripts && nestedPkg.scripts.build) {
+        log(`Running build script in ./${nestedAppRel} ...`, 'command');
+        await runCommand('npm', ['run', 'build'], nestedAppAbs, log);
+
+        const outDirName = detectBuildOutputDir(nestedAppAbs);
+        if (outDirName) {
+          const outDirAbs = path.join(nestedAppAbs, outDirName);
+          log(`Copying build output from ./${nestedAppRel}/${outDirName} to ./web ...`, 'info');
+          copyRecursiveSync(outDirAbs, webDirAbs);
+        } else {
+          log(
+            `Build output folder not found in ./${nestedAppRel}. Copying static files from there to ./web as fallback.`,
+            'info',
+          );
+          copyRecursiveSync(nestedAppAbs, webDirAbs);
+        }
+      } else {
+        log(
+          `No build script in ./${nestedAppRel}, treating it as static and copying to ./web.`,
+          'info',
         );
+        copyRecursiveSync(nestedAppAbs, webDirAbs);
       }
     } else {
-      // MODE STATIC HTML
+      // MODE 3: Pure static HTML (tidak ada package.json sama sekali)
       log('⚠️ No package.json found. Switching to Static HTML Mode.', 'success');
-      log('Skipping npm install & build. Using raw static files.', 'info');
 
-      // package.json dummy di ROOT
+      // Buat package.json dummy agar Capacitor bisa jalan
+      log('Creating dummy package.json...', 'info');
       await runCommand('npm', ['init', '-y'], projectDir, log);
 
-      // pindah aset ke /web
-      moveStaticAssetsToWeb(projectDir, log);
-
-      // pastikan ada web/index.html
-      ensureWebIndexHtml(projectDir, log);
-
-      webDir = 'web';
+      log('Moving static assets to ./web ...', 'info');
+      prepareStaticWebFromRoot(projectDir, webDirAbs);
     }
 
-    // inject safe-area setelah kita yakin index.html exist (atau minimal dicoba)
-    injectSafeAreaMetaAndCss(projectDir, webDir, isFullscreen, log);
+    // SAFE-AREA INJECTION (PAKAI ./web/index.html SELALU)
+    if (!isFullscreen) {
+      log('Injecting Safe-Area Logic (Meta + CSS)...', 'info');
+      const indexHtmlPath = path.join(webDirAbs, 'index.html');
+
+      if (fs.existsSync(indexHtmlPath)) {
+        let htmlContent = fs.readFileSync(indexHtmlPath, 'utf-8');
+
+        if (htmlContent.includes('<meta name="viewport"')) {
+          htmlContent = htmlContent.replace(
+            '<meta name="viewport" content="',
+            '<meta name="viewport" content="viewport-fit=cover, ',
+          );
+        } else {
+          htmlContent = htmlContent.replace(
+            '<head>',
+            '<head><meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">',
+          );
+        }
+
+        const safeAreaCSS = `
+<style>
+  :root {
+    --sat: env(safe-area-inset-top, 35px);
+  }
+  body {
+    padding-top: var(--sat) !important;
+    background-color: #000000;
+    min-height: 100vh;
+    box-sizing: border-box;
+  }
+  #root, #app, #__next {
+    padding-top: 0px !important;
+    min-height: 100vh;
+  }
+  header, nav, .fixed-top {
+    margin-top: var(--sat) !important;
+  }
+</style>
+`;
+        if (htmlContent.includes('</head>')) {
+          htmlContent = htmlContent.replace('</head>', `${safeAreaCSS}</head>`);
+          fs.writeFileSync(indexHtmlPath, htmlContent);
+          log('Safe-Area Logic Injected Successfully!', 'success');
+        } else {
+          log('index.html has no </head>, skipping Safe-Area injection.', 'error');
+        }
+      } else {
+        log('index.html not found in ./web, skipping Safe-Area injection.', 'error');
+      }
+    }
 
     log('Injecting Capacitor...', 'command');
     await runCommand(
       'npm',
       ['install', '@capacitor/core', '@capacitor/cli', '@capacitor/android', '--save-dev'],
       projectDir,
-      log
+      log,
     );
 
     updateStatus('CAPACITOR_INIT');
-    log(`Initializing Capacitor (WebDir: ${webDir})...`, 'command');
+    log(`Initializing Capacitor (WebDir: ${webDirRel})...`, 'command');
     await runCommand(
       'npx',
-      ['cap', 'init', `"${finalAppName}"`, finalAppId, '--web-dir', webDir],
+      ['cap', 'init', `"${finalAppName}"`, finalAppId, '--web-dir', webDirRel],
       projectDir,
-      log
+      log,
     );
 
     log('Adding Android platform...', 'command');
@@ -462,26 +380,20 @@ app.post('/api/build/stream', async (req, res) => {
     log('Applying custom settings...', 'info');
     const androidManifestPath = path.join(
       projectDir,
-      'android/app/src/main/AndroidManifest.xml'
+      'android/app/src/main/AndroidManifest.xml',
     );
-    const stylesPath = path.join(
-      projectDir,
-      'android/app/src/main/res/values/styles.xml'
-    );
-    const buildGradlePath = path.join(
-      projectDir,
-      'android/app/build.gradle'
-    );
+    const stylesPath = path.join(projectDir, 'android/app/src/main/res/values/styles.xml');
+    const buildGradlePath = path.join(projectDir, 'android/app/build.gradle');
 
     await runCommand(
       `sed -i 's/versionCode 1/versionCode ${vCode}/g' ${buildGradlePath}`,
       [],
-      projectDir
+      projectDir,
     );
     await runCommand(
       `sed -i 's/versionName "1.0"/versionName "${vName}"/g' ${buildGradlePath}`,
       [],
-      projectDir
+      projectDir,
     );
 
     if (finalOrientation !== 'user') {
@@ -489,7 +401,7 @@ app.post('/api/build/stream', async (req, res) => {
         `sed -i 's/<activity/<activity android:screenOrientation="${finalOrientation}"/g' ${androidManifestPath}`,
         [],
         projectDir,
-        log
+        log,
       );
     }
 
@@ -499,13 +411,13 @@ app.post('/api/build/stream', async (req, res) => {
         `sed -i 's|parent="AppTheme.NoActionBar"|parent="Theme.AppCompat.NoActionBar.FullScreen"|g' ${stylesPath}`,
         [],
         projectDir,
-        log
+        log,
       );
       await runCommand(
         `sed -i 's|</style>|<item name="android:windowFullscreen">true</item></style>|g' ${stylesPath}`,
         [],
         projectDir,
-        log
+        log,
       );
     } else {
       log('Mode: Safe Area (Solid Status Bar)', 'info');
@@ -520,19 +432,20 @@ app.post('/api/build/stream', async (req, res) => {
         `sed -i 's|parent="AppTheme.NoActionBar"|parent="Theme.AppCompat.NoActionBar"|g' ${stylesPath}`,
         [],
         projectDir,
-        log
+        log,
       );
       await runCommand(
         `sed -i 's|</style>|${styleFix}</style>|g' ${stylesPath}`,
         [],
         projectDir,
-        log
+        log,
       );
     }
 
     updateStatus('ANDROID_SYNC');
     await runCommand('npx', ['cap', 'sync'], projectDir, log);
 
+    // ICON HANDLING
     if (iconUrl && typeof iconUrl === 'string') {
       const resDir = path.join(projectDir, 'android/app/src/main/res');
       const folders = [
@@ -553,11 +466,7 @@ app.post('/api/build/stream', async (req, res) => {
         log('Downloading custom icon from URL...', 'command');
         for (const folder of folders) {
           const target = path.join(resDir, folder, 'ic_launcher.png');
-          const targetRound = path.join(
-            resDir,
-            folder,
-            'ic_launcher_round.png'
-          );
+          const targetRound = path.join(resDir, folder, 'ic_launcher_round.png');
           await runCommand(`curl -L "${iconUrl}" -o ${target}`, [], projectDir);
           await runCommand(`cp ${target} ${targetRound}`, [], projectDir);
         }
@@ -572,11 +481,7 @@ app.post('/api/build/stream', async (req, res) => {
 
             for (const folder of folders) {
               const target = path.join(resDir, folder, 'ic_launcher.png');
-              const targetRound = path.join(
-                resDir,
-                folder,
-                'ic_launcher_round.png'
-              );
+              const targetRound = path.join(resDir, folder, 'ic_launcher_round.png');
               fs.copyFileSync(tempIconPath, target);
               fs.copyFileSync(tempIconPath, targetRound);
             }
@@ -597,7 +502,7 @@ app.post('/api/build/stream', async (req, res) => {
     log('Locating generated APK...', 'info');
     const expectedApkPath = path.join(
       androidDir,
-      'app/build/outputs/apk/debug/app-debug.apk'
+      'app/build/outputs/apk/debug/app-debug.apk',
     );
 
     if (fs.existsSync(expectedApkPath)) {
@@ -605,10 +510,8 @@ app.post('/api/build/stream', async (req, res) => {
       const publicApkPath = path.join(PUBLIC_DIR, publicApkName);
       fs.renameSync(expectedApkPath, publicApkPath);
 
-      const protocol =
-        (req.headers['x-forwarded-proto'] as string) || req.protocol;
-      const host =
-        (req.headers['x-forwarded-host'] as string) || req.get('host');
+      const protocol = (req.headers['x-forwarded-proto'] as string) || req.protocol;
+      const host = (req.headers['x-forwarded-host'] as string) || req.get('host');
       const downloadUrl = `${protocol}://${host}/download/${publicApkName}`;
 
       updateStatus('SUCCESS');
